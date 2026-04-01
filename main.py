@@ -391,11 +391,21 @@ async def video_status(token: str, video_id: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def landing():
-    return (BASE / "static" / "index.html").read_text()
+    from fastapi.responses import Response
+    return Response(
+        content=(BASE / "static" / "index.html").read_text(),
+        media_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"}
+    )
 
 @app.get("/app", response_class=HTMLResponse)
 async def dashboard():
-    return (BASE / "static" / "app.html").read_text()
+    from fastapi.responses import Response
+    return Response(
+        content=(BASE / "static" / "app.html").read_text(),
+        media_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"}
+    )
 
 @app.get("/{fname}")
 async def static_file(fname: str):
