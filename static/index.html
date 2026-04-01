@@ -624,7 +624,7 @@ async function doSignup(e) {
   const email = document.getElementById('email').value;
   const fd = new FormData(); fd.append('email', email);
   try {
-    const r = await fetch('/api/signup', {method:'POST', body:fd});
+    const r = await fetch('http://localhost:8105/api/signup', {method:'POST', body:fd});
     const d = await r.json();
     document.getElementById('signup-success').style.display = 'block';
     document.getElementById('token-val').textContent = d.token;
