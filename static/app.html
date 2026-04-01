@@ -263,12 +263,30 @@ let selectedVideo = null;
 let selectedFile = null;
 
 // ── AUTH ──
-function doLogin() {
-  const t = document.getElementById('login-token').value.trim();
-  if (!t) return toast('Enter your access token', 'error');
-  token = t;
-  localStorage.setItem('cf_token', t);
-  init();
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value.trim();
+  if (!username || !password) return toast('Enter username and password', 'error');
+  
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  
+  try {
+    const fd = new FormData();
+    fd.append('username', username);
+    fd.append('password', password);
+    const r = await fetch(`${API}/api/login`, {method:'POST', body:fd});
+    if (!r.ok) {
+      errEl.style.display = 'block';
+      return;
+    }
+    const d = await r.json();
+    token = d.token;
+    localStorage.setItem('cf_token', token);
+    init();
+  } catch(e) {
+    errEl.style.display = 'block';
+  }
 }
 
 function logout() {

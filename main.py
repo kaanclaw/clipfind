@@ -188,6 +188,22 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 def health():
     return {"status": "ok", "version": "2.0", "gemini": bool(GEMINI_KEY)}
 
+
+ADMIN_CREDS = {
+    "kt": {"password": "kt", "token": "demo1234567890abcdef1234567890ab"}
+}
+
+@app.post("/api/login")
+async def login(username: str = Form(...), password: str = Form(...)):
+    user = ADMIN_CREDS.get(username)
+    if not user or user["password"] != password:
+        raise HTTPException(401, "Invalid username or password")
+    token = user["token"]
+    account = get_user(token)
+    if not account:
+        raise HTTPException(404, "Account not found")
+    return {"token": token, "plan": account["plan"], "email": account["email"]}
+
 @app.post("/api/signup")
 async def signup(email: str = Form(...)):
     user = create_user(email)
