@@ -30,7 +30,7 @@ input::placeholder,textarea::placeholder{color:var(--dim)}
 .login-form label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--dim)}
 
 /* APP */
-#app-view{display:none;flex:1;flex-direction:column}
+#app-view{display:flex;flex:1;flex-direction:column}
 .topbar{display:flex;align-items:center;padding:12px 24px;background:var(--bg2);border-bottom:1px solid var(--border);gap:16px}
 .tlogo{font-size:15px;font-weight:800}.tlogo span{color:var(--accent)}
 .user-info{margin-left:auto;font-size:12px;color:var(--dim);display:flex;align-items:center;gap:12px}
@@ -155,19 +155,20 @@ video{width:100%;max-width:100%;border-radius:8px;background:#000;margin-top:10p
 
 <!-- LOGIN -->
 <div id="login-view">
-      <div class="login-box">
+  <div class="login-box">
     <div class="login-logo">Clip<span>Find</span></div>
     <h2>Welcome back</h2>
-    <p>Sign in to your account</p>
+    <p>Enter your access token to continue</p>
     <div class="login-form">
-      <label>Username</label>
-      <input type="text" id="login-username" placeholder="Username" onkeydown="if(event.key==='Enter')doLogin()">
-      <label>Password</label>
-      <input type="password" id="login-password" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="your@email.com">
+      <label>Account Key</label>
+      <input type="text" id="login-token" placeholder="Paste your 32-character account key">
       <button class="btn btn-primary" onclick="doLogin()" style="margin-top:4px">Sign In →</button>
-      <div id="login-error" style="color:#f87171;font-size:12px;margin-top:8px;display:none">Invalid username or password</div>
+      <div style="text-align:center;margin-top:8px;font-size:12px;color:var(--dim)">
+        No account? <a href="/" style="color:var(--accent)">Sign up free ↗</a>
+      </div>
     </div>
-  </div>
   </div>
 </div>
 
@@ -256,36 +257,17 @@ video{width:100%;max-width:100%;border-radius:8px;background:#000;margin-top:10p
 </div>
 
 <script>
-const API = 'http://localhost:8105';
-let token = localStorage.getItem('cf_token') || '';
+const API = '';
+let token = 'demo1234567890abcdef1234567890ab'; localStorage.setItem('cf_token', token);
 let selectedVideo = null;
 let selectedFile = null;
 
 // ── AUTH ──
-async function doLogin() {
-  const username = document.getElementById('login-username').value.trim();
-  const password = document.getElementById('login-password').value.trim();
-  if (!username || !password) return toast('Enter username and password', 'error');
-  
-  const errEl = document.getElementById('login-error');
-  errEl.style.display = 'none';
-  
-  try {
-    const fd = new FormData();
-    fd.append('username', username);
-    fd.append('password', password);
-    const r = await fetch(`${API}/api/login`, {method:'POST', body:fd});
-    if (!r.ok) {
-      errEl.style.display = 'block';
-      return;
-    }
-    const d = await r.json();
-    token = d.token;
-    localStorage.setItem('cf_token', token);
-    init();
-  } catch(e) {
-    errEl.style.display = 'block';
-  }
+function doLogin() {
+  // auto-login
+  token = 'demo1234567890abcdef1234567890ab';
+  localStorage.setItem('cf_token', token);
+  init();
 }
 
 function logout() {
@@ -294,16 +276,15 @@ function logout() {
 }
 
 async function init() {
-  if (!token) { document.getElementById('login-view').style.display='flex'; return; }
+  if (!token) { return; }
   // Verify token by loading videos
   const r = await fetch(`${API}/api/videos/${token}`);
   if (!r.ok) {
     localStorage.removeItem('cf_token');
-    document.getElementById('login-view').style.display='flex';
     return;
   }
   const d = await r.json();
-  document.getElementById('login-view').style.display='none';
+  
   document.getElementById('app-view').style.display='flex';
 
   document.getElementById('tb-plan').textContent = d.plan;
@@ -506,7 +487,7 @@ function pollIndexingStatus(videoId) {
 
 // ── INIT ──
 if (token) init();
-else document.getElementById('login-view').style.display='flex';
+else 
 </script>
 </body>
 </html>
