@@ -109,6 +109,46 @@ video{width:100%;max-width:100%;border-radius:8px;background:#000;margin-top:10p
 .toast.error{border-color:rgba(248,113,113,0.3);color:var(--red)}
 
 @media(max-width:700px){.layout{grid-template-columns:1fr;grid-template-rows:auto 1fr}.sidebar{max-height:200px}}
+
+/* Inline clip preview */
+.clip-card {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden; margin-bottom: 12px;
+  transition: border-color 0.2s;
+}
+.clip-card:hover { border-color: var(--accent); }
+.clip-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+}
+.clip-rank { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+.clip-ts { font-family: var(--mono); font-size: 12px; font-weight: 600; flex: 1; }
+.clip-dur { font-size: 11px; color: var(--dim); }
+.clip-video { width: 100%; max-height: 240px; background: #000; display: block; }
+.clip-actions { display: flex; gap: 8px; padding: 10px 14px; }
+
+/* Progress bar */
+.progress-wrap { margin: 8px 0; }
+.progress-bar { height: 4px; background: rgba(99,102,241,0.15); border-radius: 2px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.5s; animation: progressPulse 1.5s infinite; }
+@keyframes progressPulse { 0%,100%{opacity:1}50%{opacity:0.5} }
+
+/* Search history chips */
+.history-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.history-chip { 
+  font-size: 11px; padding: 4px 10px; border-radius: 20px;
+  background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.2);
+  color: var(--accent2); cursor: pointer; transition: all 0.15s;
+}
+.history-chip:hover { background: rgba(99,102,241,0.2); }
+
+/* Copy button */
+.copy-btn {
+  padding: 4px 10px; font-size: 11px; border-radius: 6px;
+  background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.2);
+  color: var(--accent2); cursor: pointer; transition: all 0.15s; font-family: inherit;
+}
+.copy-btn:hover { background: rgba(99,102,241,0.2); }
 </style>
 </head>
 <body>
@@ -122,8 +162,8 @@ video{width:100%;max-width:100%;border-radius:8px;background:#000;margin-top:10p
     <div class="login-form">
       <label>Email</label>
       <input type="email" id="login-email" placeholder="your@email.com">
-      <label>Access Token</label>
-      <input type="text" id="login-token" placeholder="32-character token">
+      <label>Account Key</label>
+      <input type="text" id="login-token" placeholder="Paste your 32-character account key">
       <button class="btn btn-primary" onclick="doLogin()" style="margin-top:4px">Sign In →</button>
       <div style="text-align:center;margin-top:8px;font-size:12px;color:var(--dim)">
         No account? <a href="/" style="color:var(--accent)">Sign up free ↗</a>
@@ -192,7 +232,7 @@ video{width:100%;max-width:100%;border-radius:8px;background:#000;margin-top:10p
           <span class="card-title" id="search-title">Search</span>
         </div>
         <div class="card-body">
-          <div class="search-wrap">
+          <div class="history-chips" id="history-chips"></div><div class="search-wrap">
             <input type="text" id="query" placeholder='Describe what you\'re looking for — e.g. "moment of impact" or "person entering the building"' onkeydown="if(event.key==='Enter')doSearch()">
             <button class="btn btn-primary" onclick="doSearch()">Search</button>
           </div>
@@ -273,10 +313,10 @@ function renderVideos(videos) {
     </div>`;
   }).join('');
 
-  // Auto-refresh if any indexing
-  if (videos.some(v=>v.status==='indexing')) {
-    setTimeout(() => fetch(`/api/videos/${token}`).then(r=>r.json()).then(d=>renderVideos(d.videos)), 5000);
-  }
+  // Auto-poll status for indexing videos
+  videos.filter(v=>v.status==='indexing').forEach(v => {
+    pollIndexingStatus(v.id);
+  });
 }
 
 function selectVideo(v) {
@@ -288,6 +328,7 @@ function selectVideo(v) {
     document.getElementById('search-panel').style.display='block';
     document.getElementById('search-title').textContent = `Search: ${v.filename}`;
     document.getElementById('search-results').innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div>Enter a query to search this video</div>';
+    renderHistory(v.id);
   } else {
     document.getElementById('search-panel').style.display='none';
     toast(v.status==='indexing' ? 'Still indexing — check back in a minute' : 'Indexing failed for this video', v.status==='indexing'?'':'error');
@@ -369,24 +410,56 @@ async function doSearch() {
 function renderResults(d) {
   const el = document.getElementById('search-results');
   if (!d.results || !d.results.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>No matches found<br><div style="font-size:11px;margin-top:8px;max-width:400px;word-break:break-all">${d.raw||''}</div></div>`;
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><div style="margin-top:8px">No confident matches found</div><div style="font-size:11px;color:var(--dim);margin-top:4px">Try a more specific description, or lower the threshold</div></div>`;
     return;
   }
-  el.innerHTML = '<div class="results">' + d.results.map(r => {
+  
+  // Save to search history
+  const q = document.getElementById('query').value.trim();
+  if (q && selectedVideo) {
+    const key = `cf_history_${selectedVideo.id}`;
+    const hist = JSON.parse(localStorage.getItem(key)||'[]');
+    const updated = [q, ...hist.filter(h=>h!==q)].slice(0,10);
+    localStorage.setItem(key, JSON.stringify(updated));
+    renderHistory(selectedVideo.id);
+  }
+  
+  el.innerHTML = d.results.map(r => {
     const sc = r.score >= 0.75 ? 'sp-high' : r.score >= 0.5 ? 'sp-med' : 'sp-low';
-    const videoHtml = r.clip_url ? `<video controls src="${r.clip_url}" style="margin-top:8px"></video>` : '';
-    return `<div class="result-card" style="flex-direction:column;align-items:flex-start">
-      <div style="display:flex;align-items:center;gap:12px;width:100%">
-        <div class="score-pill ${sc}">${r.score.toFixed(2)}</div>
-        <div class="result-body">
-          <div class="result-ts">📍 ${r.start} – ${r.end}</div>
-          <div class="result-meta">Match #${r.rank} · ${r.score >= 0.75?'High':r.score>=0.5?'Medium':'Low'} confidence</div>
-        </div>
-        ${r.clip_url ? `<a href="${r.clip_url}" download class="btn btn-ghost btn-sm">↓ Download</a>` : ''}
+    const dur = r.duration_sec ? `${r.duration_sec}s clip` : '';
+    const conf = r.score >= 0.75 ? 'High' : r.score >= 0.5 ? 'Medium' : 'Low';
+    const videoBlock = r.clip_url 
+      ? `<video class="clip-video" controls preload="metadata" src="${r.clip_url}"></video>`
+      : `<div style="padding:20px;text-align:center;color:var(--dim);font-size:12px">Processing clip...</div>`;
+    const dlBtn = r.clip_url 
+      ? `<a href="${r.clip_url}" download class="btn btn-ghost btn-sm">↓ Download MP4</a>`
+      : '';
+    return `<div class="clip-card">
+      <div class="clip-header">
+        <div class="clip-rank ${sc}">${r.score.toFixed(2)}</div>
+        <div class="clip-ts">📍 ${r.start_sec}s – ${r.end_sec}s</div>
+        <div class="clip-dur">${dur} · ${conf} confidence · Match #${r.rank}</div>
       </div>
-      ${videoHtml}
+      ${videoBlock}
+      <div class="clip-actions">${dlBtn}</div>
     </div>`;
-  }).join('') + '</div>';
+  }).join('');
+}
+
+function renderHistory(videoId) {
+  const key = `cf_history_${videoId}`;
+  const hist = JSON.parse(localStorage.getItem(key)||'[]');
+  const el = document.getElementById('history-chips');
+  if (!el) return;
+  if (!hist.length) { el.innerHTML = ''; return; }
+  el.innerHTML = hist.map(h => 
+    `<div class="history-chip" onclick="useHistory('${h.replace(/'/g,'\\'')}')">↩ ${h}</div>`
+  ).join('');
+}
+
+function useHistory(q) {
+  document.getElementById('query').value = q;
+  doSearch();
 }
 
 // ── UTILS ──
@@ -396,6 +469,22 @@ function toast(msg, type='') {
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 3500);
+}
+
+function pollIndexingStatus(videoId) {
+  const poll = setInterval(async () => {
+    try {
+      const r = await fetch(`/api/status/${token}/${videoId}`);
+      const d = await r.json();
+      if (d.status === 'ready' || d.status === 'error') {
+        clearInterval(poll);
+        const vids = await fetch(`/api/videos/${token}`).then(r=>r.json());
+        renderVideos(vids.videos);
+        if (d.status === 'ready') toast(`✅ ${d.filename} is ready to search!`, 'success');
+        else toast(`❌ Indexing failed: ${d.error||'unknown error'}`, 'error');
+      }
+    } catch(e) { clearInterval(poll); }
+  }, 8000);
 }
 
 // ── INIT ──

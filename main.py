@@ -66,56 +66,67 @@ def get_base_env():
 
 # ── Precise trim via Gemini Vision ──
 def precise_trim(video_path: Path, query: str, start_sec: int, end_sec: int) -> tuple:
-    """Ask Gemini to find exact start+end within a chunk. Returns (start, end) in seconds."""
+    """Ask Gemini Vision to find exact start+end within a chunk."""
     try:
         from google import genai
         from google.genai import types
 
-        # Extract the chunk
+        chunk_sec = end_sec - start_sec
+        
+        # Extract chunk as proper re-encoded MP4 (not stream copy — ensures valid container)
         chunk_path = Path(f"/tmp/chunk_{uuid.uuid4().hex[:8]}.mp4")
-        subprocess.run([
+        r = subprocess.run([
             "ffmpeg", "-i", str(video_path),
-            "-ss", str(start_sec), "-to", str(end_sec),
-            "-c", "copy", str(chunk_path), "-y"
-        ], capture_output=True, timeout=15)
+            "-ss", str(start_sec), "-t", str(chunk_sec),
+            "-c:v", "libx264", "-c:a", "aac",
+            "-vf", "scale=640:-2",  # downscale for faster upload
+            "-crf", "28", str(chunk_path), "-y"
+        ], capture_output=True, timeout=30)
 
-        if not chunk_path.exists():
+        if not chunk_path.exists() or chunk_path.stat().st_size < 1000:
+            chunk_path.unlink(missing_ok=True)
             return start_sec, end_sec
 
-        client = genai.Client(api_key=GEMINI_KEY)
         video_bytes = chunk_path.read_bytes()
         chunk_path.unlink(missing_ok=True)
 
-        prompt = f"""You are analyzing a {end_sec - start_sec}-second video clip.
-The clip starts at {start_sec}s in the original footage.
-Find the exact moment matching: "{query}"
+        client = genai.Client(api_key=GEMINI_KEY)
+        
+        prompt = f"""This is a {chunk_sec}-second video clip.
+Find the precise moment matching this description: "{query}"
 
-Respond ONLY in JSON: {{"start_offset": <seconds from clip start>, "end_offset": <seconds from clip start>, "confidence": <0-1>}}
-Keep the clip tight — just the relevant moment, not the full chunk.
-If not found, use {{"start_offset": 0, "end_offset": {end_sec - start_sec}, "confidence": 0.3}}"""
+Rules:
+- Return ONLY valid JSON, nothing else
+- start_offset and end_offset are seconds FROM THE START of this clip (0 to {chunk_sec})
+- Keep the clip tight — just the key moment, min 2s, max 15s
+- If the described event is not visible, set confidence below 0.4
+
+{{"start_offset": <number>, "end_offset": <number>, "confidence": <0.0-1.0>}}"""
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=[
                 types.Part.from_bytes(data=video_bytes, mime_type="video/mp4"),
                 prompt
             ]
         )
+        
+        import re as _re
         text = response.text.strip()
-        # Extract JSON
-        import re
-        m = re.search(r'\{.*?\}', text, re.DOTALL)
+        m = _re.search(r'\{[^{}]+\}', text)
         if m:
             d = json.loads(m.group())
-            offset_start = max(0, int(d.get("start_offset", 0)))
-            offset_end   = min(end_sec - start_sec, int(d.get("end_offset", end_sec - start_sec)))
-            # Add 1s buffer each side
-            precise_start = start_sec + max(0, offset_start - 1)
-            precise_end   = start_sec + min(end_sec - start_sec, offset_end + 1)
-            if precise_end - precise_start >= 2:
-                return precise_start, precise_end
+            conf = float(d.get("confidence", 0))
+            if conf >= 0.4:
+                os_  = max(0, float(d.get("start_offset", 0)))
+                oe_  = min(chunk_sec, float(d.get("end_offset", chunk_sec)))
+                # 1s buffer each side
+                ps = start_sec + max(0, os_ - 1)
+                pe = start_sec + min(chunk_sec, oe_ + 1)
+                if pe - ps >= 2:
+                    return int(ps), int(pe)
     except Exception as e:
-        pass
+        pass  # fallback to full chunk
     return start_sec, end_sec
 
 # ── Index in background ──
@@ -150,8 +161,25 @@ def index_video_bg(vid_path: Path, token: str, vid_id: str):
     for v in users.get(token, {}).get("videos", []):
         if v["id"] == vid_id:
             v["status"] = status
+            v["indexed_at"] = datetime.now().isoformat()
             if error: v["indexing_error"] = error
     save_users(users)
+    
+    # Send email notification on success
+    if status == "ready":
+        try:
+            email = users.get(token, {}).get("email", "")
+            if email:
+                vid_name = next((v["filename"] for v in users[token]["videos"] if v["id"] == vid_id), "your video")
+                subprocess.run([
+                    "gog", "mail", "send",
+                    "--account", "clawkaan@gmail.com",
+                    "--to", email,
+                    "--subject", f"✅ {vid_name} is ready to search — ClipFind",
+                    "--body", f"Your video \"{vid_name}\" has been indexed and is ready to search.\n\nOpen ClipFind: http://localhost:8103/app\n\nHappy searching,\nClipFind 🎬"
+                ], capture_output=True, timeout=15)
+        except Exception:
+            pass
 
 app = FastAPI(title="ClipFind v2")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -330,6 +358,21 @@ async def list_videos(token: str):
         "credits_total": user["credits_total"]
     }
 
+
+@app.get("/api/status/{token}/{video_id}")
+async def video_status(token: str, video_id: str):
+    user = get_user(token)
+    if not user: raise HTTPException(401)
+    video = next((v for v in user["videos"] if v["id"] == video_id), None)
+    if not video: raise HTTPException(404)
+    return {
+        "video_id": video_id,
+        "status": video["status"],
+        "filename": video["filename"],
+        "indexed_at": video.get("indexed_at"),
+        "error": video.get("indexing_error"),
+    }
+
 @app.get("/", response_class=HTMLResponse)
 async def landing():
     return (BASE / "static" / "index.html").read_text()
@@ -346,4 +389,4 @@ async def static_file(fname: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8103)
+    uvicorn.run(app, host="0.0.0.0", port=8105)
