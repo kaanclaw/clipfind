@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipFind — Search Your Videos Like Google</title>
+<meta name="description" content="Upload any footage. Describe what you're looking for. Get the exact clip in seconds. Powered by Gemini Vision AI.">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+:root{
+  --bg:#050508;
+  --surface:rgba(255,255,255,0.04);
+  --border:rgba(255,255,255,0.08);
+  --text:#f4f4f8;
+  --mid:#a0a0b0;
+  --dim:#505060;
+  --accent:#7c3aed;
+  --accent2:#a78bfa;
+  --glow:rgba(124,58,237,0.25);
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden;min-height:100vh}
+
+/* Canvas bg */
+#bg-canvas{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0.6}
+
+/* ── NAV ── */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 48px;height:64px;
+  background:rgba(5,5,8,0.7);
+  border-bottom:1px solid var(--border);
+  backdrop-filter:blur(20px);
+}
+.logo{font-size:17px;font-weight:800;letter-spacing:-0.5px;display:flex;align-items:center;gap:8px}
+.logo-icon{
+  width:30px;height:30px;border-radius:8px;
+  background:linear-gradient(135deg,#7c3aed,#2563eb);
+  display:flex;align-items:center;justify-content:center;font-size:15px;
+}
+.nav-links{display:flex;align-items:center;gap:32px}
+.nav-links a{font-size:13px;font-weight:500;color:var(--mid);transition:color 0.2s;text-decoration:none}
+.nav-links a:hover{color:var(--text)}
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:9px 20px;border-radius:8px;font-size:13px;font-weight:600;
+  cursor:pointer;transition:all 0.2s;border:none;font-family:inherit;text-decoration:none;
+}
+.btn-ghost{background:transparent;color:var(--mid);border:1px solid var(--border)}
+.btn-ghost:hover{border-color:rgba(255,255,255,0.2);color:var(--text)}
+.btn-primary{
+  background:linear-gradient(135deg,#7c3aed,#2563eb);
+  color:#fff;box-shadow:0 0 20px rgba(124,58,237,0.3);
+}
+.btn-primary:hover{box-shadow:0 0 30px rgba(124,58,237,0.5);transform:translateY(-1px)}
+.btn-lg{padding:14px 32px;font-size:15px;border-radius:10px}
+.btn-xl{padding:16px 40px;font-size:16px;border-radius:12px}
+
+/* ── HERO ── */
+.hero{
+  position:relative;z-index:1;
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:120px 24px 80px;text-align:center;
+}
+.hero::before{
+  content:'';position:absolute;top:20%;left:50%;transform:translate(-50%,-50%);
+  width:600px;height:600px;border-radius:50%;
+  background:radial-gradient(circle,rgba(124,58,237,0.15) 0%,transparent 70%);
+  pointer-events:none;
+}
+
+.badge{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);
+  border-radius:20px;padding:6px 16px;
+  font-size:12px;font-weight:600;color:var(--accent2);
+  margin-bottom:32px;letter-spacing:0.5px;
+}
+.badge-dot{width:6px;height:6px;border-radius:50%;background:var(--accent2);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+
+h1{
+  font-size:clamp(40px,6vw,80px);font-weight:900;
+  line-height:1.05;letter-spacing:-2px;margin-bottom:24px;
+  background:linear-gradient(135deg,#fff 0%,#c4b5fd 50%,#93c5fd 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.hero-sub{
+  font-size:clamp(16px,2vw,20px);color:var(--mid);
+  max-width:560px;line-height:1.7;margin-bottom:48px;font-weight:400;
+}
+.hero-cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:80px}
+
+/* DEMO SEARCH UI */
+.demo-container{
+  width:100%;max-width:760px;
+  background:rgba(255,255,255,0.03);
+  border:1px solid var(--border);border-radius:16px;
+  overflow:hidden;
+  box-shadow:0 0 60px rgba(124,58,237,0.1), 0 40px 80px rgba(0,0,0,0.6);
+}
+.demo-topbar{
+  display:flex;align-items:center;gap:8px;
+  padding:14px 20px;background:rgba(255,255,255,0.03);
+  border-bottom:1px solid var(--border);
+}
+.demo-dot{width:10px;height:10px;border-radius:50%}
+.demo-body{padding:24px}
+.demo-search-box{
+  display:flex;align-items:center;gap:12px;
+  background:rgba(255,255,255,0.05);border:1px solid rgba(124,58,237,0.3);
+  border-radius:10px;padding:14px 18px;margin-bottom:20px;
+  box-shadow:0 0 0 3px rgba(124,58,237,0.08);
+}
+.demo-search-box span{color:var(--mid);font-size:14px;flex:1}
+.demo-search-icon{font-size:16px}
+.demo-kbd{
+  font-family:var(--mono,monospace);font-size:11px;
+  background:rgba(255,255,255,0.05);border:1px solid var(--border);
+  padding:2px 6px;border-radius:4px;color:var(--dim);
+}
+.demo-results{display:flex;flex-direction:column;gap:10px}
+.demo-result{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 14px;border-radius:8px;
+  background:rgba(255,255,255,0.03);border:1px solid var(--border);
+  transition:all 0.2s;cursor:pointer;
+}
+.demo-result:hover{background:rgba(124,58,237,0.08);border-color:rgba(124,58,237,0.3)}
+.demo-score{
+  font-family:monospace;font-size:11px;font-weight:700;
+  padding:4px 8px;border-radius:6px;flex-shrink:0;
+}
+.score-h{background:rgba(52,211,153,0.1);color:#34d399}
+.score-m{background:rgba(251,191,36,0.1);color:#fbbf24}
+.demo-info{flex:1}
+.demo-ts{font-size:13px;font-weight:600;color:var(--text)}
+.demo-meta{font-size:11px;color:var(--dim);margin-top:2px}
+.demo-action{font-size:11px;font-weight:600;color:var(--accent2);flex-shrink:0}
+
+/* ── LOGOS (social proof) ── */
+.logos-section{
+  position:relative;z-index:1;
+  padding:0 24px 80px;text-align:center;
+}
+.logos-label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:2px;margin-bottom:28px}
+.logos-row{display:flex;align-items:center;justify-content:center;gap:40px;flex-wrap:wrap}
+.logo-item{font-size:14px;font-weight:700;color:var(--dim);letter-spacing:-0.3px;opacity:0.6}
+
+/* ── HOW IT WORKS ── */
+.section{position:relative;z-index:1;padding:100px 24px;max-width:1100px;margin:0 auto}
+.section-eyebrow{
+  font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;
+  color:var(--accent2);margin-bottom:16px;
+}
+.section-title{font-size:clamp(28px,4vw,48px);font-weight:800;letter-spacing:-1px;margin-bottom:16px}
+.section-sub{font-size:16px;color:var(--mid);max-width:520px;line-height:1.6;margin-bottom:64px}
+
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.step{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:28px;position:relative;overflow:hidden;transition:all 0.3s;
+}
+.step:hover{border-color:rgba(124,58,237,0.3);background:rgba(124,58,237,0.05)}
+.step::before{
+  content:attr(data-num);position:absolute;top:-10px;right:16px;
+  font-size:80px;font-weight:900;color:rgba(124,58,237,0.06);line-height:1;
+}
+.step-icon{font-size:28px;margin-bottom:16px}
+.step-title{font-size:16px;font-weight:700;margin-bottom:8px}
+.step-desc{font-size:13px;color:var(--mid);line-height:1.6}
+
+/* ── BENTO FEATURES ── */
+.bento{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto auto;gap:16px}
+.bento-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:28px;transition:all 0.3s;
+}
+.bento-card:hover{border-color:rgba(124,58,237,0.3);background:rgba(124,58,237,0.05)}
+.bento-card.wide{grid-column:span 2}
+.bento-card.tall{grid-row:span 2}
+.bento-icon{font-size:28px;margin-bottom:14px}
+.bento-title{font-size:16px;font-weight:700;margin-bottom:8px}
+.bento-desc{font-size:13px;color:var(--mid);line-height:1.6}
+
+/* SPEED STAT */
+.speed-stat{
+  margin-top:20px;display:flex;align-items:baseline;gap:6px;
+}
+.speed-num{font-size:48px;font-weight:900;letter-spacing:-2px;
+  background:linear-gradient(135deg,#a78bfa,#60a5fa);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.speed-label{font-size:13px;color:var(--mid)}
+
+/* ── PRICING ── */
+.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:900px;margin:0 auto}
+.price-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:28px;position:relative;
+}
+.price-card.featured{
+  border-color:rgba(124,58,237,0.5);
+  background:rgba(124,58,237,0.08);
+}
+.price-card.featured::before{
+  content:'MOST POPULAR';position:absolute;top:-12px;left:50%;transform:translateX(-50%);
+  background:linear-gradient(135deg,#7c3aed,#2563eb);
+  color:#fff;font-size:10px;font-weight:700;letter-spacing:1.5px;
+  padding:4px 12px;border-radius:10px;white-space:nowrap;
+}
+.price-name{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--dim);margin-bottom:8px}
+.price-amount{font-size:40px;font-weight:900;letter-spacing:-1.5px;margin-bottom:6px}
+.price-amount sup{font-size:20px;vertical-align:top;margin-top:8px;display:inline-block;font-weight:500}
+.price-period{font-size:13px;color:var(--mid)}
+.price-features{list-style:none;margin:24px 0;display:flex;flex-direction:column;gap:10px}
+.price-features li{font-size:13px;color:var(--mid);display:flex;align-items:center;gap:8px}
+.price-features li::before{content:'✓';color:var(--accent2);font-weight:700;flex-shrink:0}
+.price-cta{display:block;text-align:center;padding:12px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;font-family:inherit;text-decoration:none;transition:all 0.2s}
+.pcta-primary{background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff}
+.pcta-primary:hover{box-shadow:0 0 20px rgba(124,58,237,0.3)}
+.pcta-outline{background:transparent;color:var(--mid);border:1px solid var(--border)}
+.pcta-outline:hover{border-color:rgba(255,255,255,0.2);color:var(--text)}
+
+/* ── CTA SECTION ── */
+.cta-section{
+  position:relative;z-index:1;
+  padding:100px 24px;text-align:center;
+  border-top:1px solid var(--border);
+}
+.cta-section::before{
+  content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:500px;height:300px;
+  background:radial-gradient(ellipse,rgba(124,58,237,0.12) 0%,transparent 70%);
+  pointer-events:none;
+}
+.cta-section h2{
+  font-size:clamp(28px,4vw,52px);font-weight:900;letter-spacing:-1.5px;
+  margin-bottom:16px;
+  background:linear-gradient(135deg,#fff,#c4b5fd);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.signup-form{display:flex;gap:10px;max-width:440px;margin:36px auto 0;flex-wrap:wrap;justify-content:center}
+.input{
+  flex:1;min-width:220px;
+  background:rgba(255,255,255,0.05);border:1px solid var(--border);
+  border-radius:10px;padding:14px 18px;color:var(--text);font-size:14px;font-family:inherit;outline:none;
+}
+.input:focus{border-color:rgba(124,58,237,0.5);background:rgba(124,58,237,0.05)}
+.input::placeholder{color:var(--dim)}
+#signup-success{
+  margin-top:16px;padding:16px 20px;
+  background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);
+  border-radius:10px;font-size:13px;display:none;max-width:440px;margin-left:auto;margin-right:auto;
+}
+.token-box{
+  font-family:monospace;font-size:12px;color:var(--accent2);
+  background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);
+  border-radius:8px;padding:10px 14px;margin-top:8px;word-break:break-all;
+}
+
+/* ── FOOTER ── */
+footer{
+  position:relative;z-index:1;
+  padding:40px 48px;border-top:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  font-size:13px;color:var(--dim);
+}
+footer a{color:var(--dim);text-decoration:none}
+footer a:hover{color:var(--mid)}
+
+/* DIVIDER */
+hr{border:none;border-top:1px solid var(--border);margin:0}
+
+/* MOBILE */
+@media(max-width:800px){
+  nav{padding:0 20px}
+  .nav-links{display:none}
+  h1{letter-spacing:-1px}
+  .steps,.bento{grid-template-columns:1fr}
+  .bento-card.wide{grid-column:span 1}
+  .pricing-grid{grid-template-columns:1fr}
+  .section{padding:60px 20px}
+  footer{flex-direction:column;gap:12px;text-align:center;padding:32px 20px}
+}
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<nav>
+  <div class="logo">
+    <div class="logo-icon">🎬</div>
+    ClipFind
+  </div>
+  <div class="nav-links">
+    <a href="#how-it-works">How it works</a>
+    <a href="#features">Features</a>
+    <a href="#pricing">Pricing</a>
+  </div>
+  <div style="display:flex;gap:10px">
+    <a href="/app" class="btn btn-ghost">Sign in</a>
+    <a href="#signup" class="btn btn-primary">Start free</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="badge"><div class="badge-dot"></div>Powered by Gemini Vision AI</div>
+  <h1>Search your video<br>footage instantly</h1>
+  <p class="hero-sub">Describe what you're looking for in plain English. ClipFind finds the exact moment and exports the clip — no scrubbing, no guessing.</p>
+  <div class="hero-cta">
+    <a href="#signup" class="btn btn-primary btn-xl">Start for free →</a>
+    <a href="/app" class="btn btn-ghost btn-xl">Try the demo</a>
+  </div>
+
+  <!-- INTERACTIVE DEMO VISUAL -->
+  <div class="demo-container">
+    <div class="demo-topbar">
+      <div class="demo-dot" style="background:#ff5f57"></div>
+      <div class="demo-dot" style="background:#febc2e"></div>
+      <div class="demo-dot" style="background:#28c840"></div>
+      <div style="flex:1;text-align:center;font-size:12px;color:var(--dim)">ClipFind — dashboard</div>
+    </div>
+    <div class="demo-body">
+      <div class="demo-search-box" id="demo-search">
+        <span class="demo-search-icon">🔍</span>
+        <span id="demo-typed" style="font-size:14px;color:var(--text)"></span>
+        <div class="demo-kbd">↵</div>
+      </div>
+      <div class="demo-results" id="demo-results" style="opacity:0;transition:opacity 0.4s"></div>
+    </div>
+  </div>
+</section>
+
+<!-- SOCIAL PROOF -->
+<div class="logos-section">
+  <div class="logos-label">Used for footage from</div>
+  <div class="logos-row">
+    <div class="logo-item">Dashcam</div>
+    <div class="logo-item">Security cameras</div>
+    <div class="logo-item">Sports recordings</div>
+    <div class="logo-item">Sales calls</div>
+    <div class="logo-item">Podcasts</div>
+    <div class="logo-item">Training videos</div>
+  </div>
+</div>
+
+<hr>
+
+<!-- HOW IT WORKS -->
+<div class="section" id="how-it-works">
+  <div class="section-eyebrow">How it works</div>
+  <h2 class="section-title">Three steps.<br>Any footage.</h2>
+  <p class="section-sub">No timecodes. No manual scrubbing. Just describe what you need.</p>
+  <div class="steps">
+    <div class="step" data-num="1">
+      <div class="step-icon">📤</div>
+      <div class="step-title">Upload your footage</div>
+      <div class="step-desc">Upload any MP4. Add optional context — "Dashcam from I-280, Jan 2024" — to improve accuracy. Indexing takes ~8 minutes per hour of footage.</div>
+    </div>
+    <div class="step" data-num="2">
+      <div class="step-icon">🔍</div>
+      <div class="step-title">Describe what you need</div>
+      <div class="step-desc">Type anything: "the moment of impact", "person entering from the left", "sharp turn on the highway". Gemini Vision AI understands visual context.</div>
+    </div>
+    <div class="step" data-num="3">
+      <div class="step-icon">✂️</div>
+      <div class="step-title">Get your clip</div>
+      <div class="step-desc">Results come ranked by confidence with exact timestamps. Preview inline. Export the trimmed MP4 in one click — ready for court, insurance, or editing.</div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<!-- BENTO FEATURES -->
+<div class="section" id="features" style="padding-bottom:60px">
+  <div class="section-eyebrow">Features</div>
+  <h2 class="section-title">Built for real work</h2>
+  <p class="section-sub">Every feature designed around how investigators, editors, and teams actually use footage.</p>
+  <div class="bento">
+    <div class="bento-card wide">
+      <div class="bento-icon">⚡</div>
+      <div class="bento-title">Sub-second search</div>
+      <div class="bento-desc">Once indexed, every search completes in under a second — regardless of how many hours of footage you have. Powered by ChromaDB vector search.</div>
+      <div class="speed-stat"><span class="speed-num">0.4s</span><span class="speed-label">average query time</span></div>
+    </div>
+    <div class="bento-card">
+      <div class="bento-icon">🧠</div>
+      <div class="bento-title">Understands visual context</div>
+      <div class="bento-desc">Finds moments based on what's happening visually — not just audio or captions. Works on silent footage.</div>
+    </div>
+    <div class="bento-card">
+      <div class="bento-icon">📁</div>
+      <div class="bento-title">Add case context</div>
+      <div class="bento-desc">Describe your footage when you upload. Better context = better results. Designed for professional evidence workflows.</div>
+    </div>
+    <div class="bento-card">
+      <div class="bento-icon">✂️</div>
+      <div class="bento-title">One-click clip export</div>
+      <div class="bento-desc">Every result comes with a trimmed MP4 clip. Preview inline. Download with one click. Chain-of-custody safe.</div>
+    </div>
+    <div class="bento-card">
+      <div class="bento-icon">🔒</div>
+      <div class="bento-title">Your footage stays yours</div>
+      <div class="bento-desc">No sharing, no training on your data. Files stay in your account. Self-host option available for enterprise.</div>
+    </div>
+    <div class="bento-card">
+      <div class="bento-icon">📊</div>
+      <div class="bento-title">Confidence scoring</div>
+      <div class="bento-desc">Every result comes with a similarity score so you know how confident the match is. Low-confidence results are flagged.</div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<!-- PRICING -->
+<div class="section" id="pricing" style="text-align:center">
+  <div class="section-eyebrow">Pricing</div>
+  <h2 class="section-title" style="margin-bottom:12px">Start free today</h2>
+  <p class="section-sub" style="margin:0 auto 48px">No credit card for free tier. Upgrade when you need more footage.</p>
+  <div class="pricing-grid">
+    <div class="price-card">
+      <div class="price-name">Free</div>
+      <div class="price-amount"><sup>$</sup>0</div>
+      <div class="price-period">forever</div>
+      <ul class="price-features">
+        <li>1 hour of footage indexed</li>
+        <li>Unlimited searches</li>
+        <li>Clip export (MP4)</li>
+        <li>1 active video</li>
+      </ul>
+      <a href="#signup" class="price-cta pcta-outline">Get started</a>
+    </div>
+    <div class="price-card featured">
+      <div class="price-name">Pro</div>
+      <div class="price-amount"><sup>$</sup>49</div>
+      <div class="price-period">per month</div>
+      <ul class="price-features">
+        <li>50 hours of footage</li>
+        <li>Unlimited searches</li>
+        <li>Clip export + trim editor</li>
+        <li>10 active videos</li>
+        <li>Priority support</li>
+      </ul>
+      <a href="https://buy.stripe.com/6oU5kE3Ay1H6d5I71BgYU01" target="_blank" class="price-cta pcta-primary">Start Pro →</a>
+    </div>
+    <div class="price-card">
+      <div class="price-name">Team</div>
+      <div class="price-amount"><sup>$</sup>149</div>
+      <div class="price-period">per month</div>
+      <ul class="price-features">
+        <li>200 hours of footage</li>
+        <li>5 team seats</li>
+        <li>Unlimited searches</li>
+        <li>Priority support</li>
+        <li>Self-host option</li>
+      </ul>
+      <a href="#signup" class="price-cta pcta-outline">Contact us</a>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<!-- FINAL CTA + SIGNUP -->
+<div class="cta-section" id="signup">
+  <div class="section-eyebrow" style="position:relative">Ready to ship?</div>
+  <h2>Find your first clip<br>in minutes</h2>
+  <p style="font-size:16px;color:var(--mid);margin-top:12px">Free account — 1 hour of footage, no credit card.</p>
+  <form class="signup-form" onsubmit="doSignup(event)">
+    <input class="input" type="email" id="email" placeholder="your@email.com" required>
+    <button class="btn btn-primary btn-lg" type="submit">Get access →</button>
+  </form>
+  <div id="signup-success" style="display:none">
+    <div style="color:#34d399;font-weight:600;margin-bottom:8px">✅ Account created!</div>
+    <div style="font-size:12px;color:var(--mid);margin-bottom:8px">Your access token (save this):</div>
+    <div class="token-box" id="token-val"></div>
+    <div style="margin-top:16px">
+      <a href="/app" class="btn btn-primary">Open dashboard →</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div style="display:flex;align-items:center;gap:8px">
+    <div class="logo-icon" style="width:24px;height:24px;font-size:12px">🎬</div>
+    <span>© 2026 ClipFind</span>
+  </div>
+  <div style="display:flex;gap:20px">
+    <a href="#">Privacy</a>
+    <a href="#">Terms</a>
+    <a href="mailto:support@clipfind.ai">Support</a>
+  </div>
+</footer>
+
+<script>
+// ── PARTICLE BACKGROUND ──
+(function() {
+  const canvas = document.getElementById('bg-canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H, particles = [];
+
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  class Particle {
+    constructor() { this.reset(); }
+    reset() {
+      this.x = Math.random() * W;
+      this.y = Math.random() * H;
+      this.vx = (Math.random() - 0.5) * 0.3;
+      this.vy = (Math.random() - 0.5) * 0.3;
+      this.r = Math.random() * 1.5 + 0.5;
+      this.a = Math.random() * 0.4 + 0.1;
+      this.color = Math.random() > 0.5 ? '124,58,237' : '37,99,235';
+    }
+    update() {
+      this.x += this.vx; this.y += this.vy;
+      if (this.x < 0 || this.x > W || this.y < 0 || this.y > H) this.reset();
+    }
+    draw() {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${this.color},${this.a})`;
+      ctx.fill();
+    }
+  }
+
+  for (let i = 0; i < 80; i++) particles.push(new Particle());
+
+  // Draw connecting lines between nearby particles
+  function drawConnections() {
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 120) {
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.strokeStyle = `rgba(124,58,237,${0.08 * (1 - dist/120)})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  function animate() {
+    ctx.clearRect(0, 0, W, H);
+    particles.forEach(p => { p.update(); p.draw(); });
+    drawConnections();
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+
+// ── DEMO TYPEWRITER ──
+(function() {
+  const queries = [
+    {text: '"moment of impact at the intersection"', delay: 1500},
+    {text: '"person entering from the left side"', delay: 1500},
+    {text: '"sharp turn on the highway"', delay: 1500},
+    {text: '"red car running the stop sign"', delay: 1500},
+  ];
+  const results_data = [
+    [{score:'0.91',cls:'score-h',ts:'02:34 – 03:04',meta:'dashcam_jan2024.mp4 · High confidence'},{score:'0.73',cls:'score-m',ts:'01:12 – 01:42',meta:'dashcam_jan2024.mp4 · Medium confidence'}],
+    [{score:'0.88',cls:'score-h',ts:'05:18 – 05:48',meta:'security_cam_2.mp4 · High confidence'},{score:'0.66',cls:'score-m',ts:'03:44 – 04:14',meta:'security_cam_1.mp4 · Medium confidence'}],
+    [{score:'0.95',cls:'score-h',ts:'08:22 – 08:52',meta:'dashcam_highway.mp4 · Very high confidence'},{score:'0.71',cls:'score-m',ts:'06:07 – 06:37',meta:'dashcam_highway.mp4 · Medium confidence'}],
+    [{score:'0.87',cls:'score-h',ts:'11:44 – 12:14',meta:'intersection_cam.mp4 · High confidence'},{score:'0.58',cls:'score-m',ts:'09:55 – 10:25',meta:'intersection_cam.mp4 · Medium confidence'}],
+  ];
+
+  let qi = 0;
+  const typedEl = document.getElementById('demo-typed');
+  const resultsEl = document.getElementById('demo-results');
+
+  function typeQuery(text, cb) {
+    typedEl.textContent = '';
+    let i = 0;
+    const iv = setInterval(() => {
+      typedEl.textContent = text.slice(0, ++i);
+      if (i >= text.length) { clearInterval(iv); setTimeout(cb, 600); }
+    }, 35);
+  }
+
+  function showResults(res) {
+    resultsEl.innerHTML = res.map(r => `
+      <div class="demo-result">
+        <div class="demo-score ${r.cls}">${r.score}</div>
+        <div class="demo-info">
+          <div class="demo-ts">📍 ${r.ts}</div>
+          <div class="demo-meta">${r.meta}</div>
+        </div>
+        <div class="demo-action">↓ Export</div>
+      </div>`).join('');
+    resultsEl.style.opacity = '1';
+    setTimeout(() => {
+      resultsEl.style.opacity = '0';
+      setTimeout(nextCycle, 800);
+    }, queries[qi].delay);
+  }
+
+  function nextCycle() {
+    qi = (qi + 1) % queries.length;
+    typeQuery(queries[qi].text, () => showResults(results_data[qi]));
+  }
+
+  setTimeout(() => typeQuery(queries[0].text, () => showResults(results_data[0])), 1200);
+})();
+
+// ── SIGNUP ──
+async function doSignup(e) {
+  e.preventDefault();
+  const email = document.getElementById('email').value;
+  const fd = new FormData(); fd.append('email', email);
+  try {
+    const r = await fetch('/api/signup', {method:'POST', body:fd});
+    const d = await r.json();
+    document.getElementById('signup-success').style.display = 'block';
+    document.getElementById('token-val').textContent = d.token;
+    localStorage.setItem('cf_token', d.token);
+  } catch(err) { alert('Error — please try again'); }
+}
+</script>
+</body>
+</html>

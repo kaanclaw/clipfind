@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipFind — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0f;--bg2:#111118;--bg3:#17171f;--border:rgba(255,255,255,0.08);--text:#f0f0f5;--dim:#666;--mid:#999;--accent:#6366f1;--green:#4ade80;--amber:#fbbf24;--red:#f87171;--mono:'JetBrains Mono',monospace}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+.btn{padding:9px 18px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;border:none;font-family:inherit}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{filter:brightness(1.15)}
+.btn-sm{padding:6px 12px;font-size:12px}
+.btn-ghost{background:rgba(255,255,255,0.05);color:var(--mid);border:1px solid var(--border)}
+.btn-ghost:hover{background:rgba(255,255,255,0.08);color:var(--text)}
+input,textarea{background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:inherit;outline:none;border-radius:7px;padding:10px 12px;font-size:13px;width:100%}
+input:focus,textarea:focus{border-color:var(--accent)}
+input::placeholder,textarea::placeholder{color:var(--dim)}
+
+/* LOGIN */
+#login-view{display:flex;align-items:center;justify-content:center;flex:1;padding:40px}
+.login-box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:40px;width:100%;max-width:400px;text-align:center}
+.login-logo{font-size:20px;font-weight:800;margin-bottom:8px}
+.login-logo span{color:var(--accent)}
+.login-box h2{font-size:18px;font-weight:600;margin-bottom:6px}
+.login-box p{font-size:13px;color:var(--mid);margin-bottom:24px}
+.login-form{display:flex;flex-direction:column;gap:10px;text-align:left}
+.login-form label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--dim)}
+
+/* APP */
+#app-view{display:none;flex:1;flex-direction:column}
+.topbar{display:flex;align-items:center;padding:12px 24px;background:var(--bg2);border-bottom:1px solid var(--border);gap:16px}
+.tlogo{font-size:15px;font-weight:800}.tlogo span{color:var(--accent)}
+.user-info{margin-left:auto;font-size:12px;color:var(--dim);display:flex;align-items:center;gap:12px}
+.plan-badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:10px;background:rgba(99,102,241,0.15);color:var(--accent)}
+.credits-bar{font-family:var(--mono);font-size:11px}
+
+.layout{display:grid;grid-template-columns:280px 1fr;flex:1;min-height:0}
+.sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:16px;display:flex;flex-direction:column;gap:12px;overflow-y:auto}
+.sidebar-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--dim);padding:0 4px}
+.vid-item{
+  padding:10px 12px;border-radius:8px;border:1px solid transparent;
+  cursor:pointer;transition:all 0.15s;
+}
+.vid-item:hover{background:var(--bg3);border-color:var(--border)}
+.vid-item.selected{background:rgba(99,102,241,0.08);border-color:rgba(99,102,241,0.25)}
+.vid-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vid-meta{font-size:11px;color:var(--dim);margin-top:3px}
+.vid-status{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px;margin-top:4px}
+.vs-ready{background:rgba(74,222,128,0.1);color:var(--green)}
+.vs-indexing{background:rgba(251,191,36,0.1);color:var(--amber)}
+.vs-error{background:rgba(248,113,113,0.1);color:var(--red)}
+
+/* MAIN */
+.main{padding:24px;overflow-y:auto;display:flex;flex-direction:column;gap:20px}
+.section-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.card-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg3)}
+.card-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--dim)}
+.card-body{padding:18px}
+
+/* UPLOAD */
+.upload-zone{
+  border:2px dashed var(--border);border-radius:8px;padding:32px;text-align:center;
+  cursor:pointer;transition:all 0.2s;
+}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:rgba(99,102,241,0.04)}
+.upload-zone p{font-size:13px;color:var(--mid);margin-top:8px}
+.upload-fields{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+
+/* SEARCH */
+.search-wrap{display:flex;gap:10px}
+.search-wrap input{flex:1}
+.results{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.result-card{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 14px;border-radius:8px;
+  border:1px solid var(--border);background:var(--bg3);
+  transition:all 0.15s;
+}
+.result-card:hover{border-color:var(--accent);background:rgba(99,102,241,0.04)}
+.score-pill{
+  font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;flex-shrink:0;font-family:var(--mono);
+}
+.sp-high{background:rgba(74,222,128,0.12);color:var(--green)}
+.sp-med{background:rgba(251,191,36,0.12);color:var(--amber)}
+.sp-low{background:rgba(248,113,113,0.12);color:var(--red)}
+.result-body{flex:1}
+.result-ts{font-size:13px;font-weight:600;font-family:var(--mono)}
+.result-meta{font-size:11px;color:var(--dim);margin-top:2px}
+.result-actions{display:flex;gap:6px;flex-shrink:0}
+
+video{width:100%;max-width:100%;border-radius:8px;background:#000;margin-top:10px}
+
+.empty-state{padding:32px;text-align:center;color:var(--dim);font-size:13px}
+.empty-icon{font-size:32px;margin-bottom:12px;opacity:0.4}
+
+/* TOAST */
+.toast{
+  position:fixed;bottom:20px;right:20px;z-index:999;
+  background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+  padding:12px 18px;font-size:13px;min-width:200px;
+  box-shadow:0 8px 30px rgba(0,0,0,0.4);
+  animation:toastIn 0.2s ease;
+}
+@keyframes toastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.toast.success{border-color:rgba(74,222,128,0.3);color:var(--green)}
+.toast.error{border-color:rgba(248,113,113,0.3);color:var(--red)}
+
+@media(max-width:700px){.layout{grid-template-columns:1fr;grid-template-rows:auto 1fr}.sidebar{max-height:200px}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-view">
+  <div class="login-box">
+    <div class="login-logo">Clip<span>Find</span></div>
+    <h2>Welcome back</h2>
+    <p>Enter your access token to continue</p>
+    <div class="login-form">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="your@email.com">
+      <label>Access Token</label>
+      <input type="text" id="login-token" placeholder="32-character token">
+      <button class="btn btn-primary" onclick="doLogin()" style="margin-top:4px">Sign In →</button>
+      <div style="text-align:center;margin-top:8px;font-size:12px;color:var(--dim)">
+        No account? <a href="/" style="color:var(--accent)">Sign up free ↗</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app-view">
+  <div class="topbar">
+    <div class="tlogo">Clip<span>Find</span></div>
+    <div style="font-size:13px;font-weight:500" id="tb-video">No video selected</div>
+    <div class="user-info">
+      <div class="credits-bar" id="tb-credits">— credits</div>
+      <div class="plan-badge" id="tb-plan">free</div>
+      <a href="https://buy.stripe.com/6oU5kE3Ay1H6d5I71BgYU01" target="_blank" class="btn btn-primary btn-sm">↑ Upgrade to Pro</a><button class="btn btn-ghost btn-sm" onclick="logout()">Sign out</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- SIDEBAR: Video list -->
+    <div class="sidebar">
+      <div class="sidebar-title">Your Videos</div>
+      <button class="btn btn-primary btn-sm" onclick="showUpload()">+ Upload Video</button>
+      <div id="video-list"><div style="font-size:12px;color:var(--dim);padding:8px 4px">No videos yet</div></div>
+    </div>
+
+    <!-- MAIN AREA -->
+    <div class="main" id="main-area">
+
+      <!-- UPLOAD PANEL -->
+      <div class="section-card" id="upload-panel">
+        <div class="card-head">
+          <span class="card-title">Upload Video</span>
+          <button class="btn btn-ghost btn-sm" onclick="hideUpload()">✕ Close</button>
+        </div>
+        <div class="card-body">
+          <div class="upload-zone" onclick="document.getElementById('file-input').click()" id="drop-zone">
+            <div style="font-size:32px">📹</div>
+            <div style="font-size:14px;font-weight:600;margin-top:8px">Drop video here or click to browse</div>
+            <p>MP4, MOV · Up to your plan's credit limit</p>
+          </div>
+          <input type="file" id="file-input" accept="video/*" style="display:none" onchange="fileSelected(this)">
+          <div class="upload-fields" id="upload-fields" style="display:none">
+            <div>
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:6px">Selected File</div>
+              <div id="file-name" style="font-size:13px;color:var(--text);padding:10px 12px;background:var(--bg3);border-radius:7px;border:1px solid var(--border)"></div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:6px">Context (optional)</div>
+              <textarea id="vid-description" rows="2" placeholder="Describe this footage — e.g. 'Dashcam from Tesla Model 3, I-280 incident Jan 15 2024'. Improves search accuracy."></textarea>
+            </div>
+            <div style="display:flex;gap:10px">
+              <button class="btn btn-primary" onclick="uploadVideo()">Upload & Index →</button>
+              <button class="btn btn-ghost" onclick="cancelUpload()">Cancel</button>
+            </div>
+            <div id="upload-progress" style="display:none;font-size:12px;color:var(--amber)">⏳ Uploading and indexing... (1-3 minutes)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SEARCH PANEL -->
+      <div class="section-card" id="search-panel" style="display:none">
+        <div class="card-head">
+          <span class="card-title" id="search-title">Search</span>
+        </div>
+        <div class="card-body">
+          <div class="search-wrap">
+            <input type="text" id="query" placeholder='Describe what you\'re looking for — e.g. "moment of impact" or "person entering the building"' onkeydown="if(event.key==='Enter')doSearch()">
+            <button class="btn btn-primary" onclick="doSearch()">Search</button>
+          </div>
+          <div id="search-results">
+            <div class="empty-state"><div class="empty-icon">🔍</div>Enter a query to search this video</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- EMPTY STATE -->
+      <div id="empty-state" class="section-card">
+        <div class="empty-state">
+          <div class="empty-icon">📹</div>
+          <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:8px">No video selected</div>
+          <p>Upload a video or select one from the sidebar to start searching</p>
+          <button class="btn btn-primary" style="margin-top:16px" onclick="showUpload()">Upload your first video</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let token = localStorage.getItem('cf_token') || '';
+let selectedVideo = null;
+let selectedFile = null;
+
+// ── AUTH ──
+function doLogin() {
+  const t = document.getElementById('login-token').value.trim();
+  if (!t) return toast('Enter your access token', 'error');
+  token = t;
+  localStorage.setItem('cf_token', t);
+  init();
+}
+
+function logout() {
+  localStorage.removeItem('cf_token');
+  location.reload();
+}
+
+async function init() {
+  if (!token) { document.getElementById('login-view').style.display='flex'; return; }
+  // Verify token by loading videos
+  const r = await fetch(`${API}/api/videos/${token}`);
+  if (!r.ok) {
+    localStorage.removeItem('cf_token');
+    document.getElementById('login-view').style.display='flex';
+    return;
+  }
+  const d = await r.json();
+  document.getElementById('login-view').style.display='none';
+  document.getElementById('app-view').style.display='flex';
+
+  document.getElementById('tb-plan').textContent = d.plan;
+  document.getElementById('tb-credits').textContent = `${d.credits_used.toFixed(1)}/${d.credits_total}h used`;
+
+  renderVideos(d.videos || []);
+  hideUpload();
+}
+
+// ── VIDEOS ──
+function renderVideos(videos) {
+  const el = document.getElementById('video-list');
+  if (!videos.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--dim);padding:8px 4px">Upload a video to get started</div>';
+    return;
+  }
+  el.innerHTML = videos.map(v => {
+    const sc = v.status==='ready' ? 'vs-ready' : v.status==='indexing' ? 'vs-indexing' : 'vs-error';
+    const sl = v.status==='ready' ? '✓ Ready' : v.status==='indexing' ? '⏳ Indexing...' : '✗ Error';
+    return `<div class="vid-item${selectedVideo?.id===v.id?' selected':''}" onclick="selectVideo(${JSON.stringify(v).replace(/"/g,'&quot;')})">
+      <div class="vid-name" title="${v.filename}">${v.filename}</div>
+      <div class="vid-meta">${new Date(v.uploaded_at).toLocaleDateString()}</div>
+      <div class="vid-status ${sc}">${sl}</div>
+    </div>`;
+  }).join('');
+
+  // Auto-refresh if any indexing
+  if (videos.some(v=>v.status==='indexing')) {
+    setTimeout(() => fetch(`/api/videos/${token}`).then(r=>r.json()).then(d=>renderVideos(d.videos)), 5000);
+  }
+}
+
+function selectVideo(v) {
+  selectedVideo = v;
+  document.getElementById('tb-video').textContent = v.filename;
+  document.getElementById('empty-state').style.display='none';
+  hideUpload();
+  if (v.status === 'ready') {
+    document.getElementById('search-panel').style.display='block';
+    document.getElementById('search-title').textContent = `Search: ${v.filename}`;
+    document.getElementById('search-results').innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div>Enter a query to search this video</div>';
+  } else {
+    document.getElementById('search-panel').style.display='none';
+    toast(v.status==='indexing' ? 'Still indexing — check back in a minute' : 'Indexing failed for this video', v.status==='indexing'?'':'error');
+  }
+  // Refresh sidebar selection
+  document.querySelectorAll('.vid-item').forEach(el=>el.classList.remove('selected'));
+  event?.target?.closest('.vid-item')?.classList.add('selected');
+}
+
+// ── UPLOAD ──
+function showUpload() {
+  document.getElementById('upload-panel').style.display='block';
+  document.getElementById('search-panel').style.display='none';
+  document.getElementById('empty-state').style.display='none';
+}
+function hideUpload() {
+  document.getElementById('upload-panel').style.display='none';
+  if (!selectedVideo) document.getElementById('empty-state').style.display='block';
+}
+function cancelUpload() { hideUpload(); }
+
+function fileSelected(input) {
+  selectedFile = input.files[0];
+  if (!selectedFile) return;
+  document.getElementById('file-name').textContent = `${selectedFile.name} (${(selectedFile.size/1024/1024).toFixed(1)} MB)`;
+  document.getElementById('upload-fields').style.display='flex';
+}
+
+async function uploadVideo() {
+  if (!selectedFile) return toast('No file selected', 'error');
+  const desc = document.getElementById('vid-description').value;
+  document.getElementById('upload-progress').style.display='block';
+
+  const fd = new FormData();
+  fd.append('file', selectedFile);
+  fd.append('token', token);
+  fd.append('description', desc);
+
+  try {
+    const r = await fetch('/api/upload', {method:'POST', body:fd});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Upload failed');
+    toast(`Uploaded! Indexing in background...`, 'success');
+    document.getElementById('upload-progress').style.display='none';
+    hideUpload();
+    // Refresh video list
+    setTimeout(() => fetch(`/api/videos/${token}`).then(r=>r.json()).then(d=>renderVideos(d.videos)), 2000);
+  } catch(e) {
+    toast(e.message, 'error');
+    document.getElementById('upload-progress').style.display='none';
+  }
+}
+
+// ── SEARCH ──
+async function doSearch() {
+  const q = document.getElementById('query').value.trim();
+  if (!q) return;
+  if (!selectedVideo) return toast('Select a video first', 'error');
+  if (selectedVideo.status !== 'ready') return toast('Video still indexing', 'error');
+
+  document.getElementById('search-results').innerHTML = '<div class="empty-state"><div style="font-size:24px">⏳</div><div style="margin-top:8px">Searching...</div></div>';
+
+  const fd = new FormData();
+  fd.append('token', token);
+  fd.append('video_id', selectedVideo.id);
+  fd.append('query', q);
+
+  try {
+    const r = await fetch('/api/search', {method:'POST', body:fd});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail);
+    renderResults(d);
+  } catch(e) {
+    toast(e.message, 'error');
+    document.getElementById('search-results').innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div>${e.message}</div>`;
+  }
+}
+
+function renderResults(d) {
+  const el = document.getElementById('search-results');
+  if (!d.results || !d.results.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>No matches found<br><div style="font-size:11px;margin-top:8px;max-width:400px;word-break:break-all">${d.raw||''}</div></div>`;
+    return;
+  }
+  el.innerHTML = '<div class="results">' + d.results.map(r => {
+    const sc = r.score >= 0.75 ? 'sp-high' : r.score >= 0.5 ? 'sp-med' : 'sp-low';
+    const videoHtml = r.clip_url ? `<video controls src="${r.clip_url}" style="margin-top:8px"></video>` : '';
+    return `<div class="result-card" style="flex-direction:column;align-items:flex-start">
+      <div style="display:flex;align-items:center;gap:12px;width:100%">
+        <div class="score-pill ${sc}">${r.score.toFixed(2)}</div>
+        <div class="result-body">
+          <div class="result-ts">📍 ${r.start} – ${r.end}</div>
+          <div class="result-meta">Match #${r.rank} · ${r.score >= 0.75?'High':r.score>=0.5?'Medium':'Low'} confidence</div>
+        </div>
+        ${r.clip_url ? `<a href="${r.clip_url}" download class="btn btn-ghost btn-sm">↓ Download</a>` : ''}
+      </div>
+      ${videoHtml}
+    </div>`;
+  }).join('') + '</div>';
+}
+
+// ── UTILS ──
+function toast(msg, type='') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ── INIT ──
+if (token) init();
+else document.getElementById('login-view').style.display='flex';
+</script>
+</body>
+</html>

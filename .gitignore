@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+uploads/
+clips/
+indexes/
+users.json
+*.env
+.env
+tmp_index/
+demo-dir/
+demo-footage.mp4
