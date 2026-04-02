@@ -176,6 +176,7 @@ async function loadVideos() {
 }
 
 function renderVideos(videos) {
+  allVideos = videos;
   document.getElementById('video-count').textContent = `${videos.length} video${videos.length!==1?'s':''}`;
   if (!videos.length) {
     document.getElementById('video-list').innerHTML = '<div class="empty">No videos yet — upload one above</div>';
@@ -201,29 +202,32 @@ function renderVideos(videos) {
   });
 }
 
-function selectVideo(vjson) {
-  const v = JSON.parse(vjson);
+let allVideos = [];
+
+function selectVideoByIdx(idx) {
+  const v = allVideos[idx];
+  if (!v) return;
   selectedVideo = v;
-  renderVideos(JSON.parse(document.getElementById('video-list').innerHTML.match(/"id":"[^"]+"/g) ? 
-    '[]' : '[]')); // re-render won't work this way, just update search panel
-  
+
+  // Highlight selection
+  document.querySelectorAll('.video-item').forEach(el => el.classList.remove('selected'));
+  const el = document.querySelector(`.video-item[data-idx="${idx}"]`);
+  if (el) el.classList.add('selected');
+
+  // Show search panel
   const card = document.getElementById('search-card');
   const btn = document.getElementById('search-btn');
   card.style.display = 'block';
-  document.getElementById('search-title').textContent = `Search: ${v.filename}`;
+  document.getElementById('search-title').textContent = `Searching: ${v.filename}`;
   document.getElementById('search-results').innerHTML = '';
-  
+
   if (v.status !== 'ready') {
     btn.disabled = true;
-    btn.textContent = v.status === 'indexing' ? '⏳ Still indexing...' : 'Not ready';
+    btn.textContent = v.status === 'indexing' ? '⏳ Still indexing...' : '✗ Not ready';
   } else {
     btn.disabled = false;
-    btn.textContent = 'Search';
+    btn.textContent = 'Search →';
   }
-  
-  // Highlight selection in list
-  document.querySelectorAll('.video-item').forEach(el => el.classList.remove('selected'));
-  event.currentTarget.classList.add('selected');
 }
 
 async function pollStatus(videoId) {
