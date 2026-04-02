@@ -17,11 +17,13 @@ from fastapi.middleware.cors import CORSMiddleware
 GEMINI_KEY   = os.getenv("GEMINI_API_KEY", "AIzaSyDy2YvX51IpOZb6GSDQUqnwsjvT3P4ncVg")
 STRIPE_LINK  = "https://buy.stripe.com/6oU5kE3Ay1H6d5I71BgYU01"
 
+import os as _os
 BASE    = Path(__file__).parent
-USERS   = BASE / "users.json"
-UPLOADS = BASE / "uploads"
-CLIPS   = BASE / "clips"
-INDEXES = BASE / "indexes"
+DATA    = Path(_os.environ.get("DATA_DIR", str(BASE)))
+USERS   = DATA / "users.json"
+UPLOADS = DATA / "uploads"
+CLIPS   = DATA / "clips"
+INDEXES = DATA / "indexes"
 
 PLANS = {
     "free":  {"credits": 1,   "name": "Free",  "price": 0},
@@ -176,7 +178,7 @@ def index_video_bg(vid_path: Path, token: str, vid_id: str):
         
         for ts in timestamps:
             # Extract frame
-            frame_path = BASE / "tmp_index" / f"{vid_id}_{ts}.jpg"
+            frame_path = DATA / "tmp_index" / f"{vid_id}_{ts}.jpg"
             frame_path.parent.mkdir(parents=True, exist_ok=True)
             
             subprocess.run([
@@ -220,7 +222,7 @@ def index_video_bg(vid_path: Path, token: str, vid_id: str):
     finally:
         # Cleanup temp frames
         import glob as _glob
-        for f in _glob.glob(str(BASE / "tmp_index" / f"{vid_id}_*.jpg")):
+        for f in _glob.glob(str(DATA / "tmp_index" / f"{vid_id}_*.jpg")):
             try: Path(f).unlink()
             except: pass
 
