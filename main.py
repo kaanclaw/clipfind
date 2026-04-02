@@ -390,22 +390,24 @@ async def search(
             s = max(0, ts - 2)
             e = ts + chunk_dur + 2
             
-            # Precise trim via Gemini Vision
-            ps, pe = precise_trim(vid_path, query, s, e)
+            # Use timestamp window directly (skip Gemini trim for speed)
+            ps, pe = s, e
             
-            # Export clip
+            # Export clip in background thread
             clip_name = f"clip_{i+1}_{ps}s-{pe}s.mp4"
             clip_out = clip_dir / clip_name
-            subprocess.run([
-                "ffmpeg",
-                "-ss", str(ps),
-                "-i", str(vid_path),
-                "-t", str(pe - ps),
-                "-c:v", "libx264", "-c:a", "aac", "-crf", "28",
-                str(clip_out), "-y"
-            ], capture_output=True, timeout=90)
             
-            clip_url = f"/clips/{token}/{video_id}/{clip_name}" if clip_out.exists() else None
+            if not clip_out.exists():
+                import threading
+                def make_clip(vp=vid_path, start=ps, dur=pe-ps, out=clip_out):
+                    subprocess.run([
+                        "ffmpeg", "-ss", str(start), "-i", str(vp),
+                        "-t", str(dur), "-c:v", "libx264", "-c:a", "aac", "-crf", "28",
+                        str(out), "-y"
+                    ], capture_output=True, timeout=120)
+                threading.Thread(target=make_clip, daemon=True).start()
+            
+            clip_url = f"/clips/{token}/{video_id}/{clip_name}"
             
             results.append({
                 "rank": i + 1,
