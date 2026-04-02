@@ -196,7 +196,7 @@ function renderVideos(videos) {
     const sc = v.status==='ready' ? 's-ready' : v.status==='indexing' ? 's-indexing' : 's-error';
     const sl = v.status==='ready' ? '✓ Ready to search' : v.status==='indexing' ? '⏳ Indexing...' : '✗ Error';
     const sel = selectedVideo?.id === v.id ? ' selected' : '';
-    return `<div class="video-item${sel}" onclick="selectVideo(${JSON.stringify(JSON.stringify(v))})">
+    return `<div class="video-item${sel}" data-idx="${i}" onclick="selectVideoByIdx(${i})">
       <div class="vi-icon">🎬</div>
       <div class="vi-info">
         <div class="vi-name">${esc(v.filename)}</div>
