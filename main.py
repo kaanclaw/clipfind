@@ -403,7 +403,9 @@ async def delete_video(token: str, video_id: str):
     
     # Remove from user videos list
     user["videos"] = [v for v in videos if v["id"] != video_id]
-    save_user(token, user)
+    users = load_users()
+    users[token] = user
+    save_users(users)
     
     # Clean up files
     import shutil
@@ -438,7 +440,9 @@ async def delete_all_videos(token: str):
                 except: pass
     
     user["videos"] = []
-    save_user(token, user)
+    users = load_users()
+    users[token] = user
+    save_users(users)
     return {"status": "all_deleted"}
 
 @app.get("/", response_class=HTMLResponse)
