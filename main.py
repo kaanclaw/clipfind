@@ -203,7 +203,7 @@ def index_video_bg(vid_path: Path, token: str, vid_id: str):
             
             try:
                 img_bytes = frame_path.read_bytes()
-                model = genai.GenerativeModel("gemini-2.0-flash")
+                model = genai.GenerativeModel("gemini-2.5-flash")
                 import PIL.Image, io
                 img = PIL.Image.open(io.BytesIO(img_bytes))
                 resp = model.generate_content([
