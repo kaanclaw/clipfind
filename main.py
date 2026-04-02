@@ -389,6 +389,58 @@ async def video_status(token: str, video_id: str):
         "error": video.get("indexing_error"),
     }
 
+
+@app.delete("/api/videos/{token}/{video_id}")
+async def delete_video(token: str, video_id: str):
+    user = get_user(token)
+    if not user:
+        raise HTTPException(status_code=403, detail="Invalid token")
+    
+    videos = user.get("videos", [])
+    video = next((v for v in videos if v["id"] == video_id), None)
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Remove from user videos list
+    user["videos"] = [v for v in videos if v["id"] != video_id]
+    save_user(token, user)
+    
+    # Clean up files
+    import shutil
+    for path in [
+        UPLOAD_DIR / f"{video_id}*",
+        INDEX_DIR / video_id,
+    ]:
+        import glob
+        for f in glob.glob(str(path)):
+            try:
+                if os.path.isdir(f): shutil.rmtree(f)
+                else: os.remove(f)
+            except: pass
+    
+    return {"status": "deleted", "video_id": video_id}
+
+@app.delete("/api/videos/{token}")
+async def delete_all_videos(token: str):
+    user = get_user(token)
+    if not user:
+        raise HTTPException(status_code=403, detail="Invalid token")
+    
+    import shutil
+    for video in user.get("videos", []):
+        vid_id = video["id"]
+        import glob
+        for path in [str(UPLOAD_DIR / f"{vid_id}*"), str(INDEX_DIR / vid_id)]:
+            for f in glob.glob(path):
+                try:
+                    if os.path.isdir(f): shutil.rmtree(f)
+                    else: os.remove(f)
+                except: pass
+    
+    user["videos"] = []
+    save_user(token, user)
+    return {"status": "all_deleted"}
+
 @app.get("/", response_class=HTMLResponse)
 async def landing():
     from fastapi.responses import Response

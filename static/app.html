@@ -163,6 +163,16 @@ const TOKEN = 'demo1234567890abcdef1234567890ab';
 let selectedVideo = null;
 let selectedFile = null;
 
+async function deleteVideo(videoId) {
+  if (!confirm('Delete this video?')) return;
+  await fetch(`/api/videos/${TOKEN}/${videoId}`, {method:'DELETE'});
+  loadVideos();
+  if (selectedVideo?.id === videoId) {
+    selectedVideo = null;
+    document.getElementById('search-card').style.display = 'none';
+  }
+}
+
 // Load videos on start
 async function loadVideos() {
   try {
