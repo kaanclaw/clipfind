@@ -131,31 +131,99 @@ Rules:
 
 # ── Index in background ──
 def index_video_bg(vid_path: Path, token: str, vid_id: str):
+    """Index video by extracting frames every N seconds, generating descriptions via Gemini, storing in ChromaDB."""
+    import chromadb
+    
     user_index = INDEXES / token
     user_index.mkdir(parents=True, exist_ok=True)
-
-    # Set per-user index via env var
-    env = get_base_env()
-    env["SENTRYSEARCH_DB"] = str(user_index)
-
-    # Create temp dir with just this video
-    tmp_dir = BASE / "tmp_index" / vid_id
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    link = tmp_dir / vid_path.name
-    if not link.exists():
-        shutil.copy2(str(vid_path), str(link))
-
+    
+    status = "error"
+    error = ""
+    
     try:
-        result = subprocess.run(
-            ["sentrysearch", "index", str(tmp_dir)],
-            env=env, capture_output=True, text=True, timeout=600
+        # Get video duration
+        probe = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", str(vid_path)],
+            capture_output=True, text=True, timeout=30
         )
-        status = "ready" if result.returncode == 0 else "error"
-        error  = result.stderr[:300] if result.returncode != 0 else ""
+        import json as _json
+        streams = _json.loads(probe.stdout).get("streams", [])
+        duration = 0
+        for s in streams:
+            if s.get("codec_type") == "video":
+                duration = float(s.get("duration", 0))
+                break
+        if not duration:
+            duration = 3600  # fallback 1hr
+        
+        # Extract 1 frame every 10 seconds
+        frame_interval = 10
+        timestamps = list(range(0, int(duration), frame_interval))
+        if not timestamps:
+            timestamps = [0]
+        
+        client_db = chromadb.PersistentClient(path=str(user_index))
+        collection_name = f"vid_{vid_id}"
+        try:
+            client_db.delete_collection(collection_name)
+        except:
+            pass
+        collection = client_db.get_or_create_collection(collection_name)
+        
+        gemini_client = genai.Client(api_key=GEMINI_KEY)
+        
+        docs, metas, ids = [], [], []
+        
+        for ts in timestamps:
+            # Extract frame
+            frame_path = BASE / "tmp_index" / f"{vid_id}_{ts}.jpg"
+            frame_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            subprocess.run([
+                "ffmpeg", "-ss", str(ts), "-i", str(vid_path),
+                "-vframes", "1", "-q:v", "2", str(frame_path), "-y"
+            ], capture_output=True, timeout=15)
+            
+            if not frame_path.exists():
+                continue
+            
+            try:
+                img_bytes = frame_path.read_bytes()
+                from google.genai import types as _types
+                resp = gemini_client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[
+                        _types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+                        "Describe what's happening in this video frame in 1-2 sentences. Be specific about actions, objects, people, vehicles, locations."
+                    ]
+                )
+                desc = resp.text.strip()
+            except Exception as e:
+                desc = f"Frame at {ts}s"
+            finally:
+                try: frame_path.unlink()
+                except: pass
+            
+            docs.append(desc)
+            metas.append({"timestamp": ts, "video_id": vid_id, "duration": min(frame_interval, int(duration) - ts)})
+            ids.append(f"{vid_id}_{ts}")
+        
+        if docs:
+            collection.add(documents=docs, metadatas=metas, ids=ids)
+            status = "ready"
+        else:
+            status = "error"
+            error = "No frames could be extracted"
+            
     except Exception as e:
-        status, error = "error", str(e)
+        import traceback
+        status, error = "error", traceback.format_exc()[-300:]
     finally:
-        shutil.rmtree(str(tmp_dir), ignore_errors=True)
+        # Cleanup temp frames
+        import glob as _glob
+        for f in _glob.glob(str(BASE / "tmp_index" / f"{vid_id}_*.jpg")):
+            try: Path(f).unlink()
+            except: pass
 
     users = load_users()
     for v in users.get(token, {}).get("videos", []):
@@ -277,55 +345,40 @@ async def search(
     clip_dir = CLIPS / token / video_id
     clip_dir.mkdir(parents=True, exist_ok=True)
 
-    env = get_base_env()
-    # Try per-user index first, fall back to global
     user_index = INDEXES / token
-    global_index = Path.home() / ".sentrysearch" / "db"
-    global_db_root = Path.home() / ".sentrysearch"
-    
-    if user_index.exists() and any(user_index.iterdir()):
-        env["SENTRYSEARCH_DB"] = str(user_index)
-    elif global_index.exists():
-        env["SENTRYSEARCH_DB"] = str(global_db_root)
-    else:
-        env["SENTRYSEARCH_DB"] = str(user_index)
-
     max_r = max(1, min(4, max_results))
 
     try:
-        result = subprocess.run(
-            ["sentrysearch", "search", enriched,
-             "--output-dir", str(clip_dir),
-             "--save-top", str(max_r),
-             "--threshold", "0.45"],
-            env=env, capture_output=True, text=True, timeout=60, input="y\n"
-        )
-        output = result.stdout + result.stderr
-
-        # Parse results
-        import re
-        matches = re.findall(r'#(\d+)\s+\[([0-9.]+)\]\s+(.+?\.mp4)\s+@\s+([\d:]+)-([\d:]+)', output)
-
+        import chromadb
+        client_db = chromadb.PersistentClient(path=str(user_index))
+        collection_name = f"vid_{video_id}"
+        collection = client_db.get_collection(collection_name)
+        
+        # Query the collection
+        qr = collection.query(query_texts=[enriched], n_results=min(max_r * 2, 20))
+        
         results = []
         vid_path = Path(video["path"])
-
-        for m in matches:
-            rank, score_s, fname, ts_start, ts_end = m
-            score = float(score_s)
-
-            # Convert timestamp to seconds
-            def ts_to_sec(ts):
-                parts = ts.split(":")
-                return sum(int(p) * 60**(len(parts)-i-1) for i, p in enumerate(parts))
-
-            s = ts_to_sec(ts_start)
-            e = ts_to_sec(ts_end)
-
+        
+        for i, (doc, meta, dist) in enumerate(zip(
+            qr["documents"][0],
+            qr["metadatas"][0], 
+            qr["distances"][0]
+        )):
+            score = max(0, 1 - dist)  # convert distance to similarity
+            if score < 0.3:
+                continue
+            
+            ts = meta["timestamp"]
+            chunk_dur = meta.get("duration", 10)
+            s = max(0, ts - 2)
+            e = ts + chunk_dur + 2
+            
             # Precise trim via Gemini Vision
             ps, pe = precise_trim(vid_path, query, s, e)
-
-            # Export precise clip
-            clip_name = f"clip_{rank}_{ps}s-{pe}s.mp4"
+            
+            # Export clip
+            clip_name = f"clip_{i+1}_{ps}s-{pe}s.mp4"
             clip_out = clip_dir / clip_name
             subprocess.run([
                 "ffmpeg", "-i", str(vid_path),
@@ -333,61 +386,29 @@ async def search(
                 "-c:v", "libx264", "-c:a", "aac", "-crf", "28",
                 str(clip_out), "-y"
             ], capture_output=True, timeout=30)
-
+            
+            clip_url = f"/clips/{token}/{video_id}/{clip_name}" if clip_out.exists() else None
+            
             results.append({
-                "rank": int(rank),
-                "score": score,
+                "rank": i + 1,
+                "score": round(score, 3),
                 "start_sec": ps,
                 "end_sec": pe,
                 "duration_sec": pe - ps,
-                "timestamp": f"{ts_start} → precise: {ps}s–{pe}s",
-                "clip_url": f"/api/clip/{token}/{video_id}/{clip_name}" if clip_out.exists() else None,
+                "description": doc[:100],
+                "clip_url": clip_url,
             })
+            
+            if len(results) >= max_r:
+                break
 
-        return {
-            "query": query,
-            "enriched_query": enriched if enriched != query else None,
-            "results": results,
-            "total": len(results),
-            "message": f"Found {len(results)} match(es)" if results else "No confident matches found"
-        }
+
+
     except Exception as e:
-        raise HTTPException(500, str(e))
+        import traceback
+        raise HTTPException(500, f"Search failed: {traceback.format_exc()[-300:]}")
 
-@app.get("/api/clip/{token}/{video_id}/{filename}")
-async def get_clip(token: str, video_id: str, filename: str):
-    user = get_user(token)
-    if not user: raise HTTPException(401)
-    clip_path = CLIPS / token / video_id / filename
-    if not clip_path.exists(): raise HTTPException(404)
-    return FileResponse(clip_path, media_type="video/mp4",
-                        headers={"Content-Disposition": f"attachment; filename={filename}"})
-
-@app.get("/api/videos/{token}")
-async def list_videos(token: str):
-    user = get_user(token)
-    if not user: raise HTTPException(401)
-    return {
-        "videos": user["videos"],
-        "plan": user["plan"],
-        "credits_used": user["credits_used"],
-        "credits_total": user["credits_total"]
-    }
-
-
-@app.get("/api/status/{token}/{video_id}")
-async def video_status(token: str, video_id: str):
-    user = get_user(token)
-    if not user: raise HTTPException(401)
-    video = next((v for v in user["videos"] if v["id"] == video_id), None)
-    if not video: raise HTTPException(404)
-    return {
-        "video_id": video_id,
-        "status": video["status"],
-        "filename": video["filename"],
-        "indexed_at": video.get("indexed_at"),
-        "error": video.get("indexing_error"),
-    }
+    return {"results": results}
 
 
 @app.delete("/api/videos/{token}/{video_id}")
@@ -395,55 +416,44 @@ async def delete_video(token: str, video_id: str):
     user = get_user(token)
     if not user:
         raise HTTPException(status_code=403, detail="Invalid token")
-    
     videos = user.get("videos", [])
     video = next((v for v in videos if v["id"] == video_id), None)
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
-    
-    # Remove from user videos list
     user["videos"] = [v for v in videos if v["id"] != video_id]
     users = load_users()
     users[token] = user
     save_users(users)
-    
-    # Clean up files
-    import shutil
-    for path in [
-        UPLOAD_DIR / f"{video_id}*",
-        INDEX_DIR / video_id,
-    ]:
-        import glob
-        for f in glob.glob(str(path)):
+    import shutil, glob
+    for path in [str(UPLOADS / f"{video_id}*"), str(INDEXES / video_id)]:
+        for f in glob.glob(path):
             try:
                 if os.path.isdir(f): shutil.rmtree(f)
                 else: os.remove(f)
             except: pass
-    
     return {"status": "deleted", "video_id": video_id}
+
 
 @app.delete("/api/videos/{token}")
 async def delete_all_videos(token: str):
     user = get_user(token)
     if not user:
         raise HTTPException(status_code=403, detail="Invalid token")
-    
-    import shutil
+    import shutil, glob
     for video in user.get("videos", []):
         vid_id = video["id"]
-        import glob
-        for path in [str(UPLOAD_DIR / f"{vid_id}*"), str(INDEX_DIR / vid_id)]:
+        for path in [str(UPLOADS / f"{vid_id}*"), str(INDEXES / vid_id)]:
             for f in glob.glob(path):
                 try:
                     if os.path.isdir(f): shutil.rmtree(f)
                     else: os.remove(f)
                 except: pass
-    
     user["videos"] = []
     users = load_users()
     users[token] = user
     save_users(users)
     return {"status": "all_deleted"}
+
 
 @app.get("/", response_class=HTMLResponse)
 async def landing():
@@ -463,12 +473,10 @@ async def dashboard():
         headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"}
     )
 
-@app.get("/{fname}")
-async def static_file(fname: str):
-    p = BASE / "static" / fname
-    if p.exists(): return FileResponse(p)
-    raise HTTPException(404)
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8105)
+@app.get("/clips/{token}/{video_id}/{filename}")
+async def serve_clip(token: str, video_id: str, filename: str):
+    from fastapi.responses import FileResponse
+    clip_path = CLIPS / token / video_id / filename
+    if not clip_path.exists():
+        raise HTTPException(404, "Clip not found")
+    return FileResponse(str(clip_path), media_type="video/mp4")
