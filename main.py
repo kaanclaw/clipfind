@@ -382,7 +382,7 @@ async def search(
             qr["distances"][0]
         )):
             score = max(0, 1 - dist/2)  # cosine: dist 0=identical, 2=opposite
-            if score < 0.5:
+            if score < 0.65:
                 continue
             
             ts = meta["timestamp"]
