@@ -382,7 +382,7 @@ async def search(
             qr["distances"][0]
         )):
             score = max(0, 1 - dist/2)  # cosine: dist 0=identical, 2=opposite
-            if score < 0.65:
+            if score < 0.73:
                 continue
             
             ts = meta["timestamp"]
@@ -409,15 +409,18 @@ async def search(
             
             clip_url = f"/clips/{token}/{video_id}/{clip_name}"
             
-            results.append({
-                "rank": i + 1,
-                "score": round(score, 3),
-                "start_sec": ps,
-                "end_sec": pe,
-                "duration_sec": pe - ps,
-                "description": doc[:100],
-                "clip_url": clip_url,
-            })
+            # Deduplicate: skip if within 15s of an existing result
+            too_close = any(abs(ps - prev['start_sec']) < 15 for prev in results)
+            if not too_close:
+                results.append({
+                    "rank": len(results) + 1,
+                    "score": round(score, 3),
+                    "start_sec": ps,
+                    "end_sec": pe,
+                    "duration_sec": pe - ps,
+                    "description": doc[:100],
+                    "clip_url": clip_url,
+                })
             
             if len(results) >= max_r:
                 break
