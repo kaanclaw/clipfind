@@ -3,6 +3,8 @@ ClipFind Backend v2 — Smart trimming, per-user indexes, context-enriched searc
 """
 import os, json, uuid, shutil, subprocess, hashlib, time, threading
 from pathlib import Path
+from google import genai
+from google.genai import types
 from datetime import datetime
 from typing import Optional
 import base64
@@ -170,7 +172,7 @@ def index_video_bg(vid_path: Path, token: str, vid_id: str):
             pass
         collection = client_db.get_or_create_collection(collection_name)
         
-        gemini_client = genai.Client(api_key=GEMINI_KEY)
+        gemini_client = genai.Client(api_key=GEMINI_KEY)  # noqa
         
         docs, metas, ids = [], [], []
         
@@ -189,11 +191,10 @@ def index_video_bg(vid_path: Path, token: str, vid_id: str):
             
             try:
                 img_bytes = frame_path.read_bytes()
-                from google.genai import types as _types
                 resp = gemini_client.models.generate_content(
                     model="gemini-2.5-flash",
                     contents=[
-                        _types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+                        types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
                         "Describe what's happening in this video frame in 1-2 sentences. Be specific about actions, objects, people, vehicles, locations."
                     ]
                 )
