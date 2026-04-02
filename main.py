@@ -145,22 +145,22 @@ Rules:
 
 # ── Index in background ──
 def index_video_bg(vid_path: Path, token: str, vid_id: str):
-    """Index video by extracting frames every N seconds, generating descriptions via Gemini, storing in ChromaDB."""
-    import chromadb
+    """Index video by uploading to Gemini Files API and getting timestamped descriptions in one call."""
+    import chromadb, time as _time, re as _re, json as _json
     
     user_index = INDEXES / token
     user_index.mkdir(parents=True, exist_ok=True)
     
     status = "error"
     error = ""
+    gemini_file = None
     
     try:
-        # Get video duration
+        # Probe video duration
         probe = subprocess.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", str(vid_path)],
             capture_output=True, text=True, timeout=30
         )
-        import json as _json
         streams = _json.loads(probe.stdout).get("streams", [])
         duration = 0
         for s in streams:
@@ -168,85 +168,103 @@ def index_video_bg(vid_path: Path, token: str, vid_id: str):
                 duration = float(s.get("duration", 0))
                 break
         if not duration:
-            duration = 3600  # fallback 1hr
+            duration = 600  # fallback 10min
+
+        # Upload video to Gemini Files API
+        genai.configure(api_key=GEMINI_KEY)
+        gemini_file = genai.upload_file(str(vid_path), mime_type="video/mp4")
         
-        # Extract 1 frame every 5 seconds for better accuracy
-        frame_interval = 5
-        timestamps = list(range(0, int(duration), frame_interval))
-        if not timestamps:
-            timestamps = [0]
+        # Wait for processing (max 3 min)
+        for _ in range(36):
+            if gemini_file.state.name == "ACTIVE":
+                break
+            _time.sleep(5)
+            gemini_file = genai.get_file(gemini_file.name)
         
+        if gemini_file.state.name != "ACTIVE":
+            raise Exception(f"Gemini file processing failed: {gemini_file.state.name}")
+        
+        # Ask Gemini to describe every 5 seconds in one call
+        interval = 5
+        marks = list(range(0, int(duration), interval))
+        marks_str = ", ".join(str(m) + "s" for m in marks[:120])  # max 120 marks
+        
+        # Try models in order of preference
+        model_names = ["gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.0-flash-lite"]
+        response = None
+        for model_name in model_names:
+            try:
+                model = genai.GenerativeModel(model_name)
+                prompt = (
+                    f"Analyze this dashcam video. For each of these timestamps: {marks_str}\n"
+                    "Provide one line per timestamp in EXACTLY this format:\n"
+                    "Ns: [description]\n"
+                    "Where N is the timestamp in seconds. Describe: vehicle colors/types, "
+                    "actions (turning, braking, crash, normal driving, etc), road/weather conditions. "
+                    "Be specific about: red/blue/black/white cars, SUVs/sedans/trucks, "
+                    "accidents/collisions/near-misses, snowy/wet/dry roads, intersections, "
+                    "pedestrians, traffic lights. If nothing notable, say 'normal highway driving'."
+                )
+                response = model.generate_content([gemini_file, prompt])
+                break
+            except Exception as e:
+                if "429" in str(e) or "quota" in str(e).lower():
+                    _time.sleep(30)
+                    continue
+                raise
+        
+        if not response:
+            raise Exception("All Gemini models quota exhausted")
+        
+        # Parse the timestamped descriptions
         client_db = chromadb.PersistentClient(path=str(user_index))
         collection_name = f"vid_{vid_id}"
         try:
             client_db.delete_collection(collection_name)
         except:
             pass
-        collection = client_db.get_or_create_collection(collection_name, metadata={"hnsw:space": "cosine"})
+        collection = client_db.get_or_create_collection(
+            collection_name, 
+            metadata={"hnsw:space": "cosine"}
+        )
         
-        genai.configure(api_key=GEMINI_KEY)
-        
+        # Parse "Ns: description" format
+        lines = response.text.strip().split("\n")
         docs, metas, ids = [], [], []
         
-        for ts in timestamps:
-            # Extract frame
-            frame_path = DATA / "tmp_index" / f"{vid_id}_{ts}.jpg"
-            frame_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            subprocess.run([
-                "ffmpeg", "-ss", str(ts), "-i", str(vid_path),
-                "-vframes", "1", "-q:v", "2", str(frame_path), "-y"
-            ], capture_output=True, timeout=15)
-            
-            if not frame_path.exists():
-                continue
-            
-            try:
-                img_bytes = frame_path.read_bytes()
-                model = genai.GenerativeModel("gemini-2.5-flash")
-                import PIL.Image, io
-                img = PIL.Image.open(io.BytesIO(img_bytes))
-                resp = model.generate_content([
-                    img,
-                    "Describe what's happening in this video frame in 1-2 sentences. Be specific about actions, objects, people, vehicles, locations."
-                ])
-                desc = resp.text.strip()
-            except Exception as e:
-                desc = f"Frame at {ts}s"
-            finally:
-                try: frame_path.unlink()
-                except: pass
-            
-            docs.append(desc)
-            metas.append({"timestamp": ts, "video_id": vid_id, "duration": min(frame_interval, int(duration) - ts)})
-            ids.append(f"{vid_id}_{ts}")
+        for line in lines:
+            m = _re.match(r'^(\d+)s:\s*(.+)', line.strip())
+            if m:
+                ts = int(m.group(1))
+                desc = m.group(2).strip()
+                if desc and desc != "N/A" and len(desc) > 5:
+                    docs.append(desc)
+                    metas.append({
+                        "timestamp": ts,
+                        "video_id": vid_id,
+                        "duration": interval
+                    })
+                    ids.append(f"{vid_id}_{ts}")
         
         if docs:
             collection.add(documents=docs, metadatas=metas, ids=ids)
             status = "ready"
         else:
             status = "error"
-            error = "No frames could be extracted"
+            error = f"Could not parse descriptions. Response: {response.text[:200]}"
             
     except Exception as e:
         import traceback
-        status, error = "error", traceback.format_exc()[-300:]
+        status, error = "error", traceback.format_exc()[-400:]
     finally:
-        # Cleanup temp frames
-        import glob as _glob
-        for f in _glob.glob(str(DATA / "tmp_index" / f"{vid_id}_*.jpg")):
-            try: Path(f).unlink()
-            except: pass
+        # Clean up Gemini file
+        if gemini_file:
+            try:
+                genai.delete_file(gemini_file.name)
+            except:
+                pass
 
-    users = load_users()
-    for v in users.get(token, {}).get("videos", []):
-        if v["id"] == vid_id:
-            v["status"] = status
-            v["indexed_at"] = datetime.now().isoformat()
-            if error: v["indexing_error"] = error
-    save_users(users)
-    
-    # Send email notification on success
+        # Send email notification on success
     if status == "ready":
         try:
             email = users.get(token, {}).get("email", "")
@@ -371,7 +389,7 @@ async def search(
             raise HTTPException(400, "Video index not found — please re-upload and re-index this video")
         
         # Query the collection
-        qr = collection.query(query_texts=[enriched], n_results=min(max_r * 3, 30))
+        qr = collection.query(query_texts=[enriched], n_results=min(max_r * 6, 50))
         
         results = []
         vid_path = Path(video["path"])
@@ -382,26 +400,53 @@ async def search(
             qr["distances"][0]
         )):
             score = max(0, 1 - dist/2)  # cosine: dist 0=identical, 2=opposite
-            if score < 0.73:
+            if score < 0.65:
                 continue
             
-            # Hybrid check: for specific queries, verify key terms appear in description
+            # Hybrid filter: use synonym expansion to check description relevance
             import re as _re
-            query_words = set(_re.findall(r'\b[a-z]{3,}\b', enriched.lower()))
-            # Common generic driving words to ignore in hybrid check
+            # Synonym map: query word → what to look for in description
+            _synonyms = {
+                'crash': ['crash','collision','accident','impact','struck','hitting','collid'],
+                'accident': ['accident','collision','crash','impact','struck','incident'],
+                'sedan': ['sedan','car','vehicle','automobile'],
+                'snowy': ['snow','snowy','winter','icy','slippery','ice'],
+                'snow': ['snow','snowy','winter','icy','slippery','ice'],
+                'wet': ['wet','rain','rainy','slippery','puddle','water'],
+                'rain': ['rain','rainy','wet','drizzle','storm'],
+                'turning': ['turning','turn','turned','turning','veering','swerving','cutting'],
+                'braking': ['braking','brake','braked','slowing','stopped','halt'],
+                'highway': ['highway','freeway','interstate','motorway','expressway','multi'],
+                'pedestrian': ['pedestrian','person','walker','walking','crosswalk','crossing'],
+                'intersection': ['intersection','crossroads','junction','light','signal'],
+                'merging': ['merging','merge','merged','changing','lane'],
+                'collision': ['collision','crash','accident','impact','struck','hitting'],
+            }
+            
+            # Generic words that appear in virtually all dashcam descriptions
             generic = {'driving','dashcam','vehicle','camera','footage','road','highway',
                        'lane','traffic','scene','car','truck','view','frame','image',
                        'captures','shows','find','this','that','from','with','into','onto',
-                       'during','under','over','along','through','toward','ahead','behind'}
-            specific_terms = query_words - generic
+                       'during','under','over','along','through','toward','ahead','behind',
+                       'multi','speed','forward','clear','sunny','daytime','mph','the','and',
+                       'for','are','was','had','has','its','can','may','not','all','also',
+                       'via','one','two','three','four','five','day','time','open',
+                       'traveling','moving','captured','recorded','shows','visible'}
+            
+            query_words_raw = set(_re.findall(r'\b[a-z]{3,}\b', query.lower()))
+            specific_terms = query_words_raw - generic
+            
             if specific_terms:
                 desc_lower = doc.lower()
-                # If ANY specific term appears in description, it's a valid match
-                # If NONE appear, skip (false positive)
-                if not any(t in desc_lower for t in specific_terms):
-                    # But don't filter out if score is very high (>0.80) - genuine semantic match
-                    if score < 0.80:
-                        continue
+                # Expand each specific term with synonyms
+                expanded = set()
+                for term in specific_terms:
+                    expanded.add(term)
+                    expanded.update(_synonyms.get(term, []))
+                
+                # Must have at least ONE expanded term in description
+                if not any(t in desc_lower for t in expanded):
+                    continue
             
             ts = meta["timestamp"]
             chunk_dur = meta.get("duration", 10)
