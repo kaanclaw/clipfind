@@ -21,6 +21,18 @@ import os as _os
 BASE    = Path(__file__).parent
 DATA    = Path(_os.environ.get("DATA_DIR", str(BASE)))
 USERS   = DATA / "users.json"
+
+# Ensure data directories exist and users.json is seeded on first run
+for _d in [DATA / "uploads", DATA / "clips", DATA / "indexes"]:
+    _d.mkdir(parents=True, exist_ok=True)
+if not USERS.exists():
+    import json as _json
+    USERS.write_text(_json.dumps({
+        "demo1234567890abcdef1234567890ab": {
+            "email": "taskentbusiness@gmail.com",
+            "plan": "pro", "credits_used": 0, "credits_total": 100, "videos": []
+        }
+    }))
 UPLOADS = DATA / "uploads"
 CLIPS   = DATA / "clips"
 INDEXES = DATA / "indexes"
