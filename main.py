@@ -170,8 +170,8 @@ def index_video_bg(vid_path: Path, token: str, vid_id: str):
         if not duration:
             duration = 3600  # fallback 1hr
         
-        # Extract 1 frame every 10 seconds
-        frame_interval = 10
+        # Extract 1 frame every 5 seconds for better accuracy
+        frame_interval = 5
         timestamps = list(range(0, int(duration), frame_interval))
         if not timestamps:
             timestamps = [0]
@@ -371,7 +371,7 @@ async def search(
             raise HTTPException(400, "Video index not found — please re-upload and re-index this video")
         
         # Query the collection
-        qr = collection.query(query_texts=[enriched], n_results=min(max_r * 2, 20))
+        qr = collection.query(query_texts=[enriched], n_results=min(max_r * 3, 30))
         
         results = []
         vid_path = Path(video["path"])
@@ -382,7 +382,7 @@ async def search(
             qr["distances"][0]
         )):
             score = max(0, 1 - dist/2)  # cosine: dist 0=identical, 2=opposite
-            if score < 0.1:
+            if score < 0.5:
                 continue
             
             ts = meta["timestamp"]
