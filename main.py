@@ -387,7 +387,7 @@ async def search(
             
             # Hybrid check: for specific queries, verify key terms appear in description
             import re as _re
-            query_words = set(_re.findall(r'\b[a-z]{4,}\b', enriched.lower()))
+            query_words = set(_re.findall(r'\b[a-z]{3,}\b', enriched.lower()))
             # Common generic driving words to ignore in hybrid check
             generic = {'driving','dashcam','vehicle','camera','footage','road','highway',
                        'lane','traffic','scene','car','truck','view','frame','image',
