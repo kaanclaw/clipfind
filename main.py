@@ -182,7 +182,7 @@ def index_video_bg(vid_path: Path, token: str, vid_id: str):
             client_db.delete_collection(collection_name)
         except:
             pass
-        collection = client_db.get_or_create_collection(collection_name)
+        collection = client_db.get_or_create_collection(collection_name, metadata={"hnsw:space": "cosine"})
         
         genai.configure(api_key=GEMINI_KEY)
         
@@ -381,8 +381,8 @@ async def search(
             qr["metadatas"][0], 
             qr["distances"][0]
         )):
-            score = max(0, 1 - dist)  # convert distance to similarity
-            if score < 0.3:
+            score = max(0, 1 - dist/2)  # cosine: dist 0=identical, 2=opposite
+            if score < 0.1:
                 continue
             
             ts = meta["timestamp"]
