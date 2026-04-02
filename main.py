@@ -97,7 +97,7 @@ def precise_trim(video_path: Path, query: str, start_sec: int, end_sec: int) -> 
             "-c:v", "libx264", "-c:a", "aac",
             "-vf", "scale=640:-2",  # downscale for faster upload
             "-crf", "28", str(chunk_path), "-y"
-        ], capture_output=True, timeout=30)
+        ], capture_output=True, timeout=90)
 
         if not chunk_path.exists() or chunk_path.stat().st_size < 1000:
             chunk_path.unlink(missing_ok=True)
@@ -397,11 +397,13 @@ async def search(
             clip_name = f"clip_{i+1}_{ps}s-{pe}s.mp4"
             clip_out = clip_dir / clip_name
             subprocess.run([
-                "ffmpeg", "-i", str(vid_path),
-                "-ss", str(ps), "-to", str(pe),
+                "ffmpeg",
+                "-ss", str(ps),
+                "-i", str(vid_path),
+                "-t", str(pe - ps),
                 "-c:v", "libx264", "-c:a", "aac", "-crf", "28",
                 str(clip_out), "-y"
-            ], capture_output=True, timeout=30)
+            ], capture_output=True, timeout=90)
             
             clip_url = f"/clips/{token}/{video_id}/{clip_name}" if clip_out.exists() else None
             
