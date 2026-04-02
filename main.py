@@ -3,8 +3,8 @@ ClipFind Backend v2 — Smart trimming, per-user indexes, context-enriched searc
 """
 import os, json, uuid, shutil, subprocess, hashlib, time, threading
 from pathlib import Path
-from google import genai
-from google.genai import types
+import google.generativeai as genai
+from google.generativeai import types
 from datetime import datetime
 from typing import Optional
 import base64
@@ -92,7 +92,8 @@ def precise_trim(video_path: Path, query: str, start_sec: int, end_sec: int) -> 
         video_bytes = chunk_path.read_bytes()
         chunk_path.unlink(missing_ok=True)
 
-        client = genai.Client(api_key=GEMINI_KEY)
+        genai.configure(api_key=GEMINI_KEY)
+        client = genai.GenerativeModel("gemini-2.5-flash")
         
         prompt = f"""This is a {chunk_sec}-second video clip.
 Find the precise moment matching this description: "{query}"
@@ -105,13 +106,10 @@ Rules:
 
 {{"start_offset": <number>, "end_offset": <number>, "confidence": <0.0-1.0>}}"""
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[
-                types.Part.from_bytes(data=video_bytes, mime_type="video/mp4"),
-                prompt
-            ]
-        )
+        response = client.generate_content([
+            {"mime_type": "video/mp4", "data": video_bytes},
+            prompt
+        ])
         
         import re as _re
         text = response.text.strip()
@@ -172,7 +170,7 @@ def index_video_bg(vid_path: Path, token: str, vid_id: str):
             pass
         collection = client_db.get_or_create_collection(collection_name)
         
-        gemini_client = genai.Client(api_key=GEMINI_KEY)  # noqa
+        genai.configure(api_key=GEMINI_KEY)
         
         docs, metas, ids = [], [], []
         
@@ -191,13 +189,13 @@ def index_video_bg(vid_path: Path, token: str, vid_id: str):
             
             try:
                 img_bytes = frame_path.read_bytes()
-                resp = gemini_client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=[
-                        types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
-                        "Describe what's happening in this video frame in 1-2 sentences. Be specific about actions, objects, people, vehicles, locations."
-                    ]
-                )
+                model = genai.GenerativeModel("gemini-2.0-flash")
+                import PIL.Image, io
+                img = PIL.Image.open(io.BytesIO(img_bytes))
+                resp = model.generate_content([
+                    img,
+                    "Describe what's happening in this video frame in 1-2 sentences. Be specific about actions, objects, people, vehicles, locations."
+                ])
                 desc = resp.text.strip()
             except Exception as e:
                 desc = f"Frame at {ts}s"
