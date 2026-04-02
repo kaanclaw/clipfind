@@ -351,7 +351,10 @@ async def search(
         import chromadb
         client_db = chromadb.PersistentClient(path=str(user_index))
         collection_name = f"vid_{video_id}"
-        collection = client_db.get_collection(collection_name)
+        try:
+            collection = client_db.get_collection(collection_name)
+        except Exception:
+            raise HTTPException(400, "Video index not found — please re-upload and re-index this video")
         
         # Query the collection
         qr = collection.query(query_texts=[enriched], n_results=min(max_r * 2, 20))
