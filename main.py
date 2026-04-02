@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 GEMINI_KEY   = os.getenv("GEMINI_API_KEY", "AIzaSyDy2YvX51IpOZb6GSDQUqnwsjvT3P4ncVg")
 STRIPE_LINK  = "https://buy.stripe.com/6oU5kE3Ay1H6d5I71BgYU01"
 
-BASE    = Path("/tmp/clipfind")
+BASE    = Path(__file__).parent
 USERS   = BASE / "users.json"
 UPLOADS = BASE / "uploads"
 CLIPS   = BASE / "clips"
