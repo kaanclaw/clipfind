@@ -385,6 +385,24 @@ async def search(
             if score < 0.73:
                 continue
             
+            # Hybrid check: for specific queries, verify key terms appear in description
+            import re as _re
+            query_words = set(_re.findall(r'\b[a-z]{4,}\b', enriched.lower()))
+            # Common generic driving words to ignore in hybrid check
+            generic = {'driving','dashcam','vehicle','camera','footage','road','highway',
+                       'lane','traffic','scene','car','truck','view','frame','image',
+                       'captures','shows','find','this','that','from','with','into','onto',
+                       'during','under','over','along','through','toward','ahead','behind'}
+            specific_terms = query_words - generic
+            if specific_terms:
+                desc_lower = doc.lower()
+                # If ANY specific term appears in description, it's a valid match
+                # If NONE appear, skip (false positive)
+                if not any(t in desc_lower for t in specific_terms):
+                    # But don't filter out if score is very high (>0.80) - genuine semantic match
+                    if score < 0.80:
+                        continue
+            
             ts = meta["timestamp"]
             chunk_dur = meta.get("duration", 10)
             s = max(0, ts - 2)
