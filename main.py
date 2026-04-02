@@ -411,6 +411,47 @@ async def search(
     return {"results": results}
 
 
+
+@app.get("/api/videos/{token}")
+async def list_videos(token: str):
+    user = get_user(token)
+    if not user:
+        raise HTTPException(status_code=403, detail="Invalid token")
+    return {
+        "plan": user.get("plan", "free"),
+        "credits_used": user.get("credits_used", 0),
+        "credits_total": user.get("credits_total", 10),
+        "email": user.get("email", ""),
+        "videos": [
+            {
+                "id": v["id"],
+                "filename": v["filename"],
+                "description": v.get("description", ""),
+                "status": v["status"],
+                "uploaded_at": v.get("uploaded_at", ""),
+                "indexed_at": v.get("indexed_at"),
+                "path": v.get("path", ""),
+            }
+            for v in user.get("videos", [])
+        ]
+    }
+
+@app.get("/api/status/{token}/{video_id}")
+async def video_status(token: str, video_id: str):
+    user = get_user(token)
+    if not user:
+        raise HTTPException(status_code=403, detail="Invalid token")
+    video = next((v for v in user.get("videos", []) if v["id"] == video_id), None)
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    return {
+        "video_id": video_id,
+        "filename": video["filename"],
+        "status": video["status"],
+        "indexed_at": video.get("indexed_at"),
+        "error": video.get("indexing_error"),
+    }
+
 @app.delete("/api/videos/{token}/{video_id}")
 async def delete_video(token: str, video_id: str):
     user = get_user(token)
