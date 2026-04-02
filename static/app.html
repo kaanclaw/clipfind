@@ -192,7 +192,7 @@ function renderVideos(videos) {
     document.getElementById('video-list').innerHTML = '<div class="empty">No videos yet — upload one above</div>';
     return;
   }
-  document.getElementById('video-list').innerHTML = videos.map(v => {
+  document.getElementById('video-list').innerHTML = videos.map((v,i) => {
     const sc = v.status==='ready' ? 's-ready' : v.status==='indexing' ? 's-indexing' : 's-error';
     const sl = v.status==='ready' ? '✓ Ready to search' : v.status==='indexing' ? '⏳ Indexing...' : '✗ Error';
     const sel = selectedVideo?.id === v.id ? ' selected' : '';
